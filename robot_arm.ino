@@ -43,6 +43,10 @@ const int CLOSE_ANGLE = 20;
 // o / open : 그리퍼 열기 (D10, 100도)
 // c / close : 그리퍼 닫기 (20도)
 // angle 60 : 그리퍼 각도 지정 (0~180도)
+// xyhelp : X/Y mm 이동 및 기준 자세 등록 안내
+// xm 1 / ym 1 : 앞으로 / 위로 1mm (xycal 등록 후)
+// xy 1 1 : 앞으로 1mm, 위로 1mm 동시 이동
+// Z축은 기존 z 각도 명령 사용
 // ======================================================
 
 
@@ -173,6 +177,8 @@ const unsigned int START_DELAY_US = 1500;
 const unsigned int FAST_DELAY_US  = 900;
 
 const long ACCEL_PULSES = 300;
+
+#include "xy_control.h"
 
 
 // ======================================================
@@ -433,6 +439,7 @@ void setup()
   Serial.println("o / open  = Gripper Open (100 DEG)");
   Serial.println("c / close = Gripper Close (20 DEG)");
   Serial.println("angle 60  = Gripper Angle (0 ~ 180 DEG)");
+  Serial.println(F("xyhelp = XY mm motion (requires measured pose calibration)"));
 
 
   if (zEncoderOK)
@@ -470,6 +477,12 @@ void loop()
 
     input.trim();
     input.toLowerCase();
+
+    if (xyHandleCommand(input))
+    {
+      Serial.println("Enter command:");
+      return;
+    }
 
     if (input == "o" || input == "open")
     {
@@ -551,6 +564,7 @@ void loop()
 
     if (input == "zero")
     {
+      xyInvalidateReference();
       noInterrupts();
 
       xEncoderCount = 0;
@@ -622,6 +636,7 @@ void loop()
 
     if (axis == 'x')
     {
+      xyInvalidateReference();
       long before =
         readXEncoder();
 
@@ -658,6 +673,7 @@ void loop()
 
     else if (axis == 'y')
     {
+      xyInvalidateReference();
       long before =
         readYEncoder();
 
