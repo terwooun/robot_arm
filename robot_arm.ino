@@ -40,6 +40,7 @@ const int CLOSE_ANGLE = 20;
 // e    : X/Y/Z 현재 엔코더 위치
 // zero : 현재 위치를 0점으로 설정
 // h    : X/Y/Z 홈 스위치 입력 확인 (모터 이동 없음)
+// homez : Z축 음수 방향 2단계 호밍 (! 입력으로 중단)
 // o / open : 그리퍼 열기 (D10, 100도)
 // c / close : 그리퍼 닫기 (20도)
 // angle 60 : 그리퍼 각도 지정 (0~180도)
@@ -318,6 +319,8 @@ void updateZEncoder()
 // SETUP
 // ======================================================
 
+#include "z_homing.h"
+
 void setup()
 {
   gripper.attach(GRIPPER_PIN);
@@ -399,6 +402,9 @@ void setup()
   // ----------------------
 
   Wire.begin();
+#if defined(WIRE_HAS_TIMEOUT)
+  Wire.setWireTimeout(25000UL, true);
+#endif
 
   delay(100);
 
@@ -436,6 +442,7 @@ void setup()
   Serial.println("e    = Encoder Check");
   Serial.println("zero = Encoder Zero");
   Serial.println("h    = Home Switch Check (NO MOTION)");
+  Serial.println(F("homez = Z homing toward negative direction; ! = stop during homing"));
   Serial.println("o / open  = Gripper Open (100 DEG)");
   Serial.println("c / close = Gripper Close (20 DEG)");
   Serial.println("angle 60  = Gripper Angle (0 ~ 180 DEG)");
@@ -477,6 +484,13 @@ void loop()
 
     input.trim();
     input.toLowerCase();
+
+    if (input == "homez")
+    {
+      homeZ();
+      Serial.println("Enter command:");
+      return;
+    }
 
     if (xyHandleCommand(input))
     {
@@ -845,6 +859,14 @@ void moveAxis(
   )
   {
     unsigned int pulseDelay;
+
+    // Negative Z is the confirmed home direction. Positive retreat is allowed.
+    if (pulPin == Z_PUL && angle < 0 && digitalRead(Z_HOME) == HIGH)
+    {
+      digitalWrite(Z_PUL, LOW);
+      Serial.println(F("Z HOME LIMIT: negative motion stopped"));
+      break;
+    }
 
 
     // 가속

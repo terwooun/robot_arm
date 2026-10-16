@@ -6,7 +6,7 @@ Arduino Mega 2560용 평행링크 로봇팔입니다. X/Y 모터를 함께 구�
 ## 파일과 업로드
 
 GitHub의 **Code → Download ZIP**으로 받거나 저장소를 clone하세요.
-`robot_arm.ino`, `xy_control.h`, `xy_motion.h`를 같은 `robot_arm` 폴더에 둡니다.
+`robot_arm.ino`, `xy_control.h`, `xy_motion.h`, `z_homing.h`를 같은 `robot_arm` 폴더에 둡니다.
 `.ino`만 복사하면 새 기능이 컴파일되지 않습니다.
 
 Arduino IDE에서 보드는 **Arduino Mega or Mega 2560**, 프로세서는
@@ -22,6 +22,7 @@ Arduino IDE에서 보드는 **Arduino Mega or Mega 2560**, 프로세서는
 | `e` | 기존 X/Y/Z 엔코더 출력 |
 | `zero` | 기존 엔코더 카운터를 0으로 초기화 |
 | `h` | D22/D23/D24 홈 스위치 상태 출력 |
+| `homez` | Z 음수 방향으로 2단계 자동 호밍, 성공 시 Z만 영점 설정 |
 | `o` / `open` | D10 그리퍼 100도 |
 | `c` / `close` | 그리퍼 20도 |
 | `angle 60` | 그리퍼를 지정 각도로 이동 |
@@ -48,8 +49,52 @@ Arduino IDE에서 보드는 **Arduino Mega or Mega 2560**, 프로세서는
 앞/뒤는 현재 베이스가 향한 팔의 수직 평면에서의 방향입니다. Z를 회전하면
 이 평면도 회전하며, 책상에 고정된 전역 X/Y 좌표 명령은 아닙니다.
 
-새 핀과 추가 배선은 없습니다. 홈 스위치는 현재 `h`로 확인하는 기능만 있습니다.
-**자동 호밍 및 홈 스위치에 의한 리밋 정지는 아직 구현되지 않았습니다.**
+새 핀은 없습니다. Z 홈 스위치는 기존 D24를 사용하며 아래의 Z 호밍 절차를 지원합니다.
+X/Y 스위치는 `h`로 확인하는 기능만 있으며, X/Y 자동 호밍·리밋 정지는 아직 없습니다.
+
+## Z 호밍 시험
+
+확인된 접근 방향은 **음수(-)**, 후퇴 방향은 **양수(+)**입니다.
+Z 스위치는 COM → GND, NC → D24, `INPUT_PULLUP`입니다.
+놓으면 LOW, 누르거나 배선이 끊기면 HIGH이며 기존 배선을 바꿀 필요는 없습니다.
+
+1. `h`로 놓으면 LOW / 누르면 HIGH인지 먼저 확인합니다.
+2. 팔·그리퍼가 회전할 공간을 확보하고 스위치에서 가까운 위치에서 시작합니다.
+3. 시리얼 모니터 9600bps, 새 줄 설정으로 `homez`를 전송합니다.
+4. 처음부터 HIGH이면 양수 방향으로 최대 5도 이내에서 LOW를 찾고 1도 더 후퇴합니다.
+5. 음수 방향으로 최대 30도 탐색하고 HIGH 감지 즉시 펄스를 중단합니다.
+6. 양수 방향으로 LOW를 찾은 뒤 1도 더 후퇴하고, 절반 속도로 음수 재접근합니다.
+7. 두 번째 HIGH가 안정적으로 유지되고 AS5600 읽기가 성공하면 Z 카운터만 0으로 설정합니다.
+8. `e`로 Z가 약 0도인지 확인하고 `z 1`로 빠져나온 뒤 `h`에서 LOW인지 확인합니다.
+
+모든 각도 제한은 기어비를 적용한 **베이스 출력축 기준**입니다.
+탐색 펄스 HIGH/LOW는 각각 4000µs, 마지막 재접근은 각각 8000µs로 설정했습니다.
+처음 감지한 순간 멈춘 뒤 20ms 동안 접점을 확인하며, 바운스가 있으면 오류로 중단합니다.
+전체 호밍은 20초 이내여야 하고 마지막 재접근은 최대 7도입니다.
+`homez`는 전원 ON 시 자동 실행하지 않습니다. 기존처럼 시작 시 그리퍼는 100도로 열립니다.
+
+정상 출력 순서는 다음과 같습니다. 처음 눌린 상태라면 SEEK 전에 RELEASE가 한 번 더 나옵니다.
+
+```text
+Z HOME: START; ! stops; search max 30 DEG; total timeout 20 s
+Z HOME: SEEK -
+Z HOME: RELEASE + (max 5 DEG), then clearance +1 DEG
+Z HOME: SLOW SEEK -
+Z HOME DONE: Z=0 DEG; switch HIGH; move z positive to leave home
+```
+
+호밍 중 `!`를 전송하면 펄스를 중단합니다. 다른 입력은 호밍 중 버립니다.
+스위치를 못 찾거나 해제하지 못한 경우, 접점 불안정, AS5600 통신 실패, 시간 초과,
+사용자 중단이면 `Z HOME ERROR: stopped; zero NOT set`을 출력하며 영점을 설정하지 않습니다.
+이때는 이전 영점을 새 홈으로 믿고 진행하지 말고 원인을 해결한 뒤 호밍을 다시 실행합니다.
+스위치를 못 찾으면 배선·접근 방향·시작 거리를 확인하고, 해제가 안 되면 NC 접점과
+기계적 눌림을 확인하세요. I²C 통신은 지원되는 Wire에서 25ms 타임아웃을 적용했습니다.
+
+일반 `z` 음수 이동도 매 펄스 전에 D24를 검사하여 HIGH이면
+`Z HOME LIMIT: negative motion stopped`를 출력하고 중단합니다.
+양수 후퇴는 허용합니다. 이 기능은 **홈 쪽 한 방향의 리밋**이며 반대쪽 회전 한계는
+아직 정해지지 않았습니다. `!` 정지는 `homez`와 mm 이동에서만 처리합니다.
+펄스 중단은 모터 전원이나 유지 토크를 끄는 동작이 아닙니다.
 
 ## 먼저 현재 자세 등록
 
@@ -75,7 +120,7 @@ Arduino IDE에서 보드는 **Arduino Mega or Mega 2560**, 프로세서는
 `x`, `y`, `zero`, 정지 또는 추종 오차 발생 후에는 기준을 다시 등록해야 합니다.
 `z`, 그리퍼, `h`, `e` 명령은 기준을 해제하지 않습니다.
 
-홈 스위치 설치 후에는 홈 자세에서의 실제 A/B와 접근 방향, 허용 관절 범위를
+X/Y 홈 스위치 설치 후에는 홈 자세에서의 실제 A/B와 접근 방향, 허용 관절 범위를
 확정하고 자동 등록·리밋 기능을 연결해야 합니다. 기구학상 수평 0도와 홈 카운터 0은
 다른 기준입니다.
 
@@ -158,4 +203,6 @@ g++ -std=c++11 -Wall -Wextra -Werror -pedantic tests/xy_motion_test.cpp -o /tmp/
 /tmp/xy_motion_test
 g++ -std=c++11 -Wall -Wextra -Werror -pedantic tests/xy_control_test.cpp -o /tmp/xy_control_test
 /tmp/xy_control_test
+g++ -std=c++11 -Wall -Wextra -Werror -pedantic tests/z_homing_test.cpp -o /tmp/z_homing_test
+/tmp/z_homing_test
 ```

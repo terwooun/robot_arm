@@ -86,7 +86,7 @@ void xyHelp()
   Serial.println(F("xycheck 1 0 = preview only; pos = encoder-derived wrist position"));
   Serial.println(F("! + Send = stop during mm motion; other input during mm motion is discarded"));
   Serial.println(F("Initial test limits: 10 mm/move, 5 DEG/move, +/-15 DEG from calibration"));
-  Serial.println(F("Home switches: h reads only; automatic homing/limit stop not implemented"));
+  Serial.println(F("h = switch inputs; homez = Z homing; X/Y homing not implemented"));
 }
 
 void xyPrintPosition()
