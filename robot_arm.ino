@@ -1,4 +1,10 @@
 #include <Wire.h>
+#include <Servo.h>
+
+Servo gripper;
+const int GRIPPER_PIN = 10;
+const int OPEN_ANGLE = 100;
+const int CLOSE_ANGLE = 20;
 
 // ======================================================
 // 3축 로봇팔 + X/Y Encoder + Z AS5600
@@ -34,6 +40,9 @@
 // e    : X/Y/Z 현재 엔코더 위치
 // zero : 현재 위치를 0점으로 설정
 // h    : X/Y/Z 홈 스위치 입력 확인 (모터 이동 없음)
+// o / open : 그리퍼 열기 (D10, 100도)
+// c / close : 그리퍼 닫기 (20도)
+// angle 60 : 그리퍼 각도 지정 (0~180도)
 // ======================================================
 
 
@@ -305,6 +314,9 @@ void updateZEncoder()
 
 void setup()
 {
+  gripper.attach(GRIPPER_PIN);
+  gripper.write(OPEN_ANGLE);
+
   pinMode(X_HOME, INPUT_PULLUP);
   pinMode(Y_HOME, INPUT_PULLUP);
   pinMode(Z_HOME, INPUT_PULLUP);
@@ -418,6 +430,9 @@ void setup()
   Serial.println("e    = Encoder Check");
   Serial.println("zero = Encoder Zero");
   Serial.println("h    = Home Switch Check (NO MOTION)");
+  Serial.println("o / open  = Gripper Open (100 DEG)");
+  Serial.println("c / close = Gripper Close (20 DEG)");
+  Serial.println("angle 60  = Gripper Angle (0 ~ 180 DEG)");
 
 
   if (zEncoderOK)
@@ -455,6 +470,56 @@ void loop()
 
     input.trim();
     input.toLowerCase();
+
+    if (input == "o" || input == "open")
+    {
+      gripper.write(OPEN_ANGLE);
+      Serial.print("GRIPPER OPEN : ");
+      Serial.print(OPEN_ANGLE);
+      Serial.println(" DEG");
+      Serial.println("Enter command:");
+      return;
+    }
+
+    if (input == "c" || input == "close")
+    {
+      gripper.write(CLOSE_ANGLE);
+      Serial.print("GRIPPER CLOSE : ");
+      Serial.print(CLOSE_ANGLE);
+      Serial.println(" DEG");
+      Serial.println("Enter command:");
+      return;
+    }
+
+    if (input.startsWith("angle "))
+    {
+      String angleText = input.substring(6);
+      angleText.trim();
+      bool valid = angleText.length() > 0;
+      // 숫자가 아닌 입력을 0도로 해석하여 움직이지 않도록 검사
+      for (unsigned int i = 0; i < angleText.length(); i++)
+      {
+        if (angleText.charAt(i) < '0' || angleText.charAt(i) > '9')
+        {
+          valid = false;
+        }
+      }
+
+      long angle = angleText.toInt();
+      if (valid && angleText.length() <= 3 && angle <= 180)
+      {
+        gripper.write((int)angle);
+        Serial.print("GRIPPER ANGLE : ");
+        Serial.print(angle);
+        Serial.println(" DEG");
+      }
+      else
+      {
+        Serial.println("ERROR : angle must be an integer from 0 to 180 DEG");
+      }
+      Serial.println("Enter command:");
+      return;
+    }
 
     if (input == "h")
     {
