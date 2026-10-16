@@ -17,6 +17,7 @@ unsigned long nowUs=0;
 int position=20, pulses=0, dir=LOW, pul=LOW, mode=0, readsAtHome=0;
 bool sensorOK=true, finalReadOK=true, failSensorOnPulse=false, stopOnPulse=false, forceTimeout=false;
 int firstDirection=-1;
+bool positiveSeen=false, negativeAfterPositive=false, stopDuringBackoff=false;
 struct SerialMock {
   bool stop=false;
   std::string output;
@@ -27,6 +28,7 @@ struct SerialMock {
 unsigned long micros(){nowUs+=100;return nowUs;}
 unsigned long millis(){nowUs+=100;return nowUs/1000;}
 int digitalRead(int){
+  if(mode==6 && dir==HIGH && position<100)return HIGH;
   if(mode==1)return HIGH;
   if(mode==2)return LOW;
   if(mode==3 && position<=0)return (++readsAtHome%2) ? HIGH:LOW;
@@ -38,7 +40,10 @@ void digitalWrite(int pin,int value){
   if(pin==Z_DIR){dir=value;return;}
   if(value==HIGH && pul==LOW){
     if(firstDirection<0)firstDirection=dir;
+    if(dir==HIGH)positiveSeen=true;
+    else if(positiveSeen)negativeAfterPositive=true;
     ++pulses;position+=dir==HIGH?1:-1;
+    if(stopDuringBackoff && dir==HIGH)Serial.stop=true;
     if(stopOnPulse)Serial.stop=true;
     if(failSensorOnPulse)sensorOK=false;
     if(forceTimeout)nowUs+=21000000UL;
@@ -52,6 +57,7 @@ void reset(int initial=20){
   position=initial;pulses=0;dir=pul=LOW;mode=0;readsAtHome=0;
   nowUs=0;sensorOK=finalReadOK=true;failSensorOnPulse=stopOnPulse=forceTimeout=false;firstDirection=-1;
   zEncoderCount=99;zLastRaw=123;zEncoderOK=true;
+  positiveSeen=negativeAfterPositive=stopDuringBackoff=false;
   Serial.stop=false;Serial.output.clear();
 }
 void expectFailure(){
@@ -60,25 +66,32 @@ void expectFailure(){
   assert(Serial.output.find("Z HOME DONE")==std::string::npos);
 }
 int main(){
+  const long backoff=lround(5*PULSE_PER_DEGREE);
   reset();homeZ();assert(zEncoderCount==0 && zLastRaw==321);
-  assert(position==0 && pul==LOW && firstDirection==LOW);
-  assert(Serial.output.find("SLOW SEEK")!=std::string::npos);
+  assert(position==backoff && pul==LOW && firstDirection==LOW);
+  assert(!negativeAfterPositive);
+  assert(Serial.output.find("SLOW SEEK")==std::string::npos);
   assert(Serial.output.find("Z HOME DONE")!=std::string::npos);
-  reset(-5);homeZ();assert(firstDirection==HIGH && position==0 && zEncoderCount==0);
-  reset();mode=1;expectFailure();assert(pulses==lround(5*PULSE_PER_DEGREE));
+  reset(-5);homeZ();assert(firstDirection==HIGH && position==backoff-5 && zEncoderCount==0);
+  assert(!negativeAfterPositive);
+  reset();mode=1;expectFailure();assert(pulses==backoff);
+  assert(Serial.output.find("still HIGH after +5 DEG")!=std::string::npos);
   reset();mode=2;expectFailure();assert(pulses==lround(30*PULSE_PER_DEGREE));
-  reset();mode=3;expectFailure();assert(position==0);
-  assert(Serial.output.find("switch did not stay stable")!=std::string::npos);
-  reset();mode=4;homeZ();assert(position==0 && zEncoderCount==0 && pul==LOW);
-  assert(Serial.output.find("Z HOME DONE")!=std::string::npos);
-  reset();mode=5;homeZ();assert(position==0 && zEncoderCount==0 && pul==LOW);
-  assert(Serial.output.find("Z HOME DONE")!=std::string::npos);
+  // Contact chatter must no longer prevent retreat, including HIGH during it.
+  for(int contactMode=3;contactMode<=6;++contactMode){
+    reset();mode=contactMode;homeZ();
+    assert(position==backoff && zEncoderCount==0 && pul==LOW);
+    assert(!negativeAfterPositive);
+    assert(Serial.output.find("Z HOME DONE")!=std::string::npos);
+  }
+  reset(-200);expectFailure();assert(pulses==backoff);
   reset();sensorOK=false;expectFailure();assert(pulses==0);
   assert(Serial.output.find("AS5600 communication failed")!=std::string::npos);
   reset();failSensorOnPulse=true;expectFailure();assert(pulses==1);
-  reset();finalReadOK=false;expectFailure();assert(position==0);
+  reset();finalReadOK=false;expectFailure();assert(position==backoff);
   reset();stopOnPulse=true;expectFailure();assert(pulses==1);
+  reset();stopDuringBackoff=true;expectFailure();assert(position==1);
   reset();forceTimeout=true;expectFailure();assert(pulses==1);
   reset();Serial.stop=true;expectFailure();assert(pulses==0);
-  std::cout<<"Z homing: normal, initially pressed, stuck contacts, bounce, sensor, stop, timeout passed\n";
+  std::cout<<"Z single-touch homing: retreat, chatter, limits, sensor, stop, timeout passed\n";
 }
