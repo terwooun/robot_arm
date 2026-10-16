@@ -33,6 +33,7 @@
 //
 // e    : X/Y/Z 현재 엔코더 위치
 // zero : 현재 위치를 0점으로 설정
+// h    : X/Y/Z 홈 스위치 입력 확인 (모터 이동 없음)
 // ======================================================
 
 
@@ -48,6 +49,12 @@ const int X_DIR = 7;
 
 const int Z_PUL = 8;
 const int Z_DIR = 9;
+
+// NC 배선: COM -> GND, NC -> 입력핀
+// LOW = 눌리지 않음, HIGH = 눌림 또는 배선 단선
+const int X_HOME = 22;
+const int Y_HOME = 23;
+const int Z_HOME = 24;
 
 
 // ======================================================
@@ -89,7 +96,7 @@ const long PULSES_PER_REV = 3200;
 // 1000 PPR × 4 = 4000 CPR
 const long ENCODER_CPR = 4000;
 
-// 기어비
+// X/Y/Z 공통 확정 기어비 (실물 확인)
 // Motor 9T -> Robot 32T
 const double GEAR_RATIO = 32.0 / 9.0;
 
@@ -298,6 +305,10 @@ void updateZEncoder()
 
 void setup()
 {
+  pinMode(X_HOME, INPUT_PULLUP);
+  pinMode(Y_HOME, INPUT_PULLUP);
+  pinMode(Z_HOME, INPUT_PULLUP);
+
   // ----------------------
   // Motor
   // ----------------------
@@ -406,6 +417,7 @@ void setup()
   Serial.println();
   Serial.println("e    = Encoder Check");
   Serial.println("zero = Encoder Zero");
+  Serial.println("h    = Home Switch Check (NO MOTION)");
 
 
   if (zEncoderOK)
@@ -443,6 +455,14 @@ void loop()
 
     input.trim();
     input.toLowerCase();
+
+    if (input == "h")
+    {
+      printHomeSwitches();
+      Serial.println();
+      Serial.println("Enter command:");
+      return;
+    }
 
 
     // ==================================================
@@ -1048,6 +1068,27 @@ void printZEncoderResult(
 
 
   Serial.println("==============================");
+}
+
+
+// ======================================================
+// X/Y/Z Home Switch Input Check (no motor movement)
+// ======================================================
+
+void printHomeSwitches()
+{
+  const int xState = digitalRead(X_HOME);
+  const int yState = digitalRead(Y_HOME);
+  const int zState = digitalRead(Z_HOME);
+
+  Serial.println();
+  Serial.println("HOME SWITCH STATUS (NC, NO MOTION)");
+  Serial.print("X HOME (D22): ");
+  Serial.println(xState == LOW ? "LOW - RELEASED" : "HIGH - PRESSED OR OPEN CIRCUIT");
+  Serial.print("Y HOME (D23): ");
+  Serial.println(yState == LOW ? "LOW - RELEASED" : "HIGH - PRESSED OR OPEN CIRCUIT");
+  Serial.print("Z HOME (D24): ");
+  Serial.println(zState == LOW ? "LOW - RELEASED" : "HIGH - PRESSED OR OPEN CIRCUIT");
 }
 
 
