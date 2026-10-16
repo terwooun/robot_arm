@@ -30,6 +30,8 @@ int digitalRead(int){
   if(mode==1)return HIGH;
   if(mode==2)return LOW;
   if(mode==3 && position<=0)return (++readsAtHome%2) ? HIGH:LOW;
+  if(mode==4 && position<=0 && ++readsAtHome<=10)return readsAtHome%2 ? HIGH:LOW;
+  if(mode==5 && position==1 && dir==HIGH && ++readsAtHome<=10)return readsAtHome%2 ? LOW:HIGH;
   return position<=0 ? HIGH:LOW;
 }
 void digitalWrite(int pin,int value){
@@ -66,7 +68,13 @@ int main(){
   reset();mode=1;expectFailure();assert(pulses==lround(5*PULSE_PER_DEGREE));
   reset();mode=2;expectFailure();assert(pulses==lround(30*PULSE_PER_DEGREE));
   reset();mode=3;expectFailure();assert(position==0);
+  assert(Serial.output.find("switch did not stay stable")!=std::string::npos);
+  reset();mode=4;homeZ();assert(position==0 && zEncoderCount==0 && pul==LOW);
+  assert(Serial.output.find("Z HOME DONE")!=std::string::npos);
+  reset();mode=5;homeZ();assert(position==0 && zEncoderCount==0 && pul==LOW);
+  assert(Serial.output.find("Z HOME DONE")!=std::string::npos);
   reset();sensorOK=false;expectFailure();assert(pulses==0);
+  assert(Serial.output.find("AS5600 communication failed")!=std::string::npos);
   reset();failSensorOnPulse=true;expectFailure();assert(pulses==1);
   reset();finalReadOK=false;expectFailure();assert(position==0);
   reset();stopOnPulse=true;expectFailure();assert(pulses==1);
