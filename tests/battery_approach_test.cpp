@@ -14,12 +14,15 @@ long zEncoderCount=0;
 bool zEncoderOK=true, zHomed=false;
 double simulatedZ=0;
 int zPulses=0, zDirection=LOW, zPulse=LOW;
-bool stopZ=false, failZ=false;
+bool stopZ=false, failZ=false, failAtSecond=false;
+bool zHomeCancelled=false, homeFailure=false;
+int homeCalls=0;
 double zResponse=1;
 std::vector<unsigned long> zTimes;
 std::vector<std::size_t> xyAtZ;
 std::vector<float> heightAtZ;
-struct GripperMock { int angle=20; void write(int n){angle=n;} int read(){return angle;} } gripper;
+std::vector<int> gripperEvents;
+struct GripperMock { int angle=20; void write(int n){angle=n;gripperEvents.push_back(n);} int read(){return angle;} } gripper;
 const int OPEN_ANGLE=100, CLOSE_ANGLE=20;
 int digitalRead(int) { return LOW; }
 void digitalWrite(int pin,int value) {
@@ -32,18 +35,24 @@ void digitalWrite(int pin,int value) {
       simulatedZ+=(zDirection==HIGH ? -1 : 1)*4096.0/3200*zResponse;
       zEncoderCount=std::lround(simulatedZ);
       if(stopZ) Serial.input+='!';
-      if(failZ) zEncoderOK=false;
+      if(failZ || (failAtSecond && Serial.output.str().find("RUN: SECOND PLACE")!=std::string::npos)) zEncoderOK=false;
     }
     zPulse=value; return;
   }
   xyDigitalWrite(pin,value);
 }
+void homeZ() {
+  ++homeCalls;
+  zHomed=!homeFailure;
+  zHomeCancelled=false;
+  if(zHomed) {zEncoderCount=0;simulatedZ=0;zEncoderOK=true;}
+}
 #include "../battery_approach.h"
 void fresh() {
   reset();
   zEncoderCount=0;simulatedZ=0;zPulses=0;zDirection=zPulse=LOW;
-  zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();
-  stopZ=failZ=false;zEncoderOK=true;zHomed=false;
+  zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();gripperEvents.clear();
+  stopZ=failZ=failAtSecond=false;homeFailure=false;homeCalls=0;zHomeCancelled=false;zEncoderOK=true;zHomed=false;
   batteryAboveZ=28.056f;
   xyOperatorStopped=false;
   batteryHandleCommand(String("s"));
@@ -187,10 +196,28 @@ int main() {
   // One command completes a cycle; no repeat loop or stale success on failure.
   fresh();zHomed=true;Serial.clearOutput();batteryRun();
   assert(printed("RUN DONE") && gripper.angle==100);
-  assert(xyEndpointError(xyMeasuredPose(),XYMotion::forward(BATTERY_PLACE))<=0.15f);
+  assert(homeCalls==1);
+  assert(xyEndpointError(xyMeasuredPose(),BATTERY_SECOND_RETURN)<=0.15f);
+  assert(fabs(batteryZAngle()-38.216f)<0.25f);
+  const auto runText=Serial.output.str();
+  assert(runText.find("RUN: SECOND PICK")<runText.find("RUN: SECOND PLACE"));
+  assert(runText.find("RUN: SECOND PLACE")<runText.find("RUN: SECOND REPICK"));
+  assert(runText.find("RUN: SECOND REPICK")<runText.find("RUN: SECOND RETURN"));
   count=edges.size();zp=zPulses;batteryRun();
   assert(printed("RUN PAUSED at above") && edges.size()==count && zPulses==zp);
+  fresh();homeFailure=true;Serial.clearOutput();batteryRun();
+  assert(printed("RUN PAUSED at homez") && edges.empty() && homeCalls==1);
+  // No separate homez command is required. Fresh default starts unhomed.
   fresh();Serial.clearOutput();batteryRun();
-  assert(printed("RUN PAUSED at above") && edges.empty());
+  assert(printed("RUN DONE") && homeCalls==1);
+  assert((gripperEvents==std::vector<int>{100,100,20,100,20,100,20,100}));
+  assert(xyEndpointError(xyMeasuredPose(),BATTERY_SECOND_RETURN)<=0.15f);
+  // Stop at run entry is checked before homing or any servo/motor movement.
+  fresh();Serial.input="!";batteryRun();
+  assert(homeCalls==0 && edges.empty() && gripperEvents.empty());
+  // Later stage sensor failure must not release or advance to repick/return.
+  fresh();failAtSecond=true;Serial.clearOutput();batteryRun();
+  assert(printed("RUN PAUSED at second place") && gripper.angle==20);
+  assert(!printed("RUN: SECOND REPICK"));expectIdle();
   std::cout<<"Battery approach: prerequisites, path, endpoint, warning, stop, sensor tests passed\n";
 }

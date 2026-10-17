@@ -61,13 +61,14 @@ void reset(int initial=20){
   Serial.stop=false;Serial.output.clear();
 }
 void expectFailure(){
-  homeZ();assert(pul==LOW);assert(zEncoderCount==99);
+  zHomed=true; // A failed new home must invalidate a previous successful home.
+  homeZ();assert(pul==LOW);assert(zEncoderCount==99);assert(!zHomed);
   assert(Serial.output.find("Z HOME ERROR")!=std::string::npos);
   assert(Serial.output.find("Z HOME DONE")==std::string::npos);
 }
 int main(){
   const long backoff=lround(5*PULSE_PER_DEGREE);
-  reset();homeZ();assert(zEncoderCount==0 && zLastRaw==321);
+  reset();homeZ();assert(zEncoderCount==0 && zLastRaw==321 && zHomed);
   assert(position==backoff && pul==LOW && firstDirection==LOW);
   assert(!negativeAfterPositive);
   assert(Serial.output.find("SLOW SEEK")==std::string::npos);
