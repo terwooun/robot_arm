@@ -8,6 +8,7 @@ float batteryAboveZ = 31.097f;
 // The original recording did not include proof of homez. Explicit confirmation
 // or a freshly measured home-relative angle is required after each reset.
 bool batteryZConfirmed = false;
+bool batteryHadWarning = false;
 
 float batteryZAngle()
 {
@@ -33,20 +34,22 @@ bool batteryLegValid(const XYMotion::Pose &start, const XYMotion::Point &target)
 
 bool batteryMoveTo(const XYMotion::Point &target)
 {
-  // Short internal legs preserve the manual 50mm cap and per-move limits.
-  for (int i=0; i<20; ++i) {
+  // Plan a finite number of relative segments once. Do not retry a missed
+  // endpoint or keep chasing an encoder deficit indefinitely.
+  const XYMotion::Point origin = XYMotion::forward(xyMeasuredPose());
+  const float dx = target.forward-origin.forward, dy = target.up-origin.up;
+  const float distance = hypot(dx,dy);
+  if (!isfinite(distance)) return false;
+  if (distance <= XY_ENDPOINT_TOLERANCE_MM) return true;
+  const int segments = (int)ceil(distance/10.0f);
+  if (segments > 20) return false;
+  for (int i=0; i<segments; ++i) {
     if (xyStopRequested() || !xyCalibrated) return false;
-    const XYMotion::Point p = XYMotion::forward(xyMeasuredPose());
-    const float dx = target.forward-p.forward, dy = target.up-p.up;
-    const float distance = hypot(dx,dy);
-    if (distance <= XY_ENDPOINT_TOLERANCE_MM) return true;
-    const float scale = distance > 10 ? 10 / distance : 1;
-    xyMove(dx*scale, dy*scale, false);
-    // Manual jogging keeps its reference on warnings; an automatic sequence
-    // must not advance to rotation/approach after an unverified leg.
-    if (!xyLastMoveVerified) return false;
+    xyMove(dx/segments, dy/segments, false);
+    if (!xyLastMoveCompleted) return false; // Stop/rejected path, not feedback warning.
+    if (!xyLastMoveVerified) batteryHadWarning = true;
   }
-  return false;
+  return true;
 }
 
 bool batteryRotate()
@@ -69,7 +72,14 @@ bool batteryRotate()
   }
   if (!xyWaitMicros(200000UL)) return false;
   updateZEncoder();
-  return zEncoderOK && fabs(batteryZAngle()-batteryAboveZ)<=0.25f;
+  if (!zEncoderOK) return false;
+  const float error = batteryZAngle()-batteryAboveZ;
+  if (!isfinite(error)) return false;
+  if (fabs(error)>0.25f) {
+    batteryHadWarning = true;
+    Serial.print(F("WARNING: ABOVE Z angle error DEG: ")); Serial.println(error);
+  }
+  return true;
 }
 
 void batteryAbove()
@@ -90,6 +100,7 @@ void batteryAbove()
     Serial.println(F("ABOVE: no motion; path rejected")); return;
   }
   xyOperatorStopped = false;
+  batteryHadWarning = false;
   if (xyStopRequested()) { Serial.println(F("ABOVE: cancelled before motion")); return; }
   gripper.write(OPEN_ANGLE);
   Serial.println(F("ABOVE: lift, rotate, approach; ! stops; no descent or close"));
@@ -97,7 +108,12 @@ void batteryAbove()
     digitalWrite(X_PUL,LOW); digitalWrite(Y_PUL,LOW); digitalWrite(Z_PUL,LOW);
     Serial.println(F("ABOVE PAUSED: sequence ended; inspect pos/e, no automatic retry")); return;
   }
-  Serial.println(F("ABOVE DONE: verify battery alignment before descending"));
+  const float endpointError = xyEndpointError(xyMeasuredPose(), target);
+  if (endpointError > XY_ENDPOINT_TOLERANCE_MM) batteryHadWarning = true;
+  Serial.print(F("ABOVE XY endpoint error mm: ")); Serial.println(endpointError);
+  Serial.println(batteryHadWarning
+    ? F("ABOVE FINISHED WITH WARNING: manually align before descending")
+    : F("ABOVE DONE: verify battery alignment before descending"));
   xyPrintPosition();
 }
 

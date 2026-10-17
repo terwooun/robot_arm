@@ -26,6 +26,7 @@ const float XY_ACCEL_MM_S2 = 2.0f;
 
 bool xyCalibrated = false;
 bool xyLastMoveVerified = false;
+bool xyLastMoveCompleted = false;
 bool xyOperatorStopped = false;
 XYMotion::Pose xyReference = {0.0f, 0.0f};
 long xyReferenceX = 0;
@@ -271,6 +272,7 @@ bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target
 void xyMove(float deltaForward, float deltaUp, bool preview)
 {
   xyLastMoveVerified = false;
+  xyLastMoveCompleted = false;
   if (!xyCalibrated)
   {
     Serial.println(F("ERROR: XY NOT CALIBRATED. Use xyhelp and xycal"));
@@ -360,6 +362,7 @@ void xyMove(float deltaForward, float deltaUp, bool preview)
   if (xyOperatorStopped) { xyAbort(); return; }
   if (!corrected)
     Serial.println(F("WARNING: XY target not verified; correction skipped/limited; reference retained"));
+  xyLastMoveCompleted = true;
   xyLastMoveVerified = corrected;
   const XYMotion::Point actual = XYMotion::forward(xyMeasuredPose());
   Serial.print(corrected ? F("XY DONE (encoder-derived): FORWARD ") : F("XY FINISHED WITH WARNING (encoder-derived): FORWARD ")); Serial.print(actual.forward - origin.forward, 3);
