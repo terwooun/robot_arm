@@ -18,7 +18,8 @@ bool stopZ=false, failZ=false;
 double zResponse=1;
 std::vector<unsigned long> zTimes;
 std::vector<std::size_t> xyAtZ;
-struct GripperMock { int angle=20; void write(int n){angle=n;} } gripper;
+std::vector<float> heightAtZ;
+struct GripperMock { int angle=20; void write(int n){angle=n;} int read(){return angle;} } gripper;
 const int OPEN_ANGLE=100, CLOSE_ANGLE=20;
 int digitalRead(int) { return LOW; }
 void digitalWrite(int pin,int value) {
@@ -27,6 +28,7 @@ void digitalWrite(int pin,int value) {
     if(value==HIGH && zPulse==LOW) {
       ++zPulses;
       zTimes.push_back(clockUs);xyAtZ.push_back(edges.size());
+      heightAtZ.push_back(XYMotion::forward(xyMeasuredPose()).up);
       simulatedZ+=(zDirection==HIGH ? -1 : 1)*4096.0/3200*zResponse;
       zEncoderCount=std::lround(simulatedZ);
       if(stopZ) Serial.input+='!';
@@ -40,7 +42,7 @@ void digitalWrite(int pin,int value) {
 void fresh() {
   reset();
   zEncoderCount=0;simulatedZ=0;zPulses=0;zDirection=zPulse=LOW;
-  zResponse=1;zTimes.clear();xyAtZ.clear();
+  zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();
   stopZ=failZ=false;zEncoderOK=true;zHomed=false;
   batteryAboveZ=28.056f;
   xyOperatorStopped=false;
@@ -144,5 +146,42 @@ int main() {
   batteryAbove();
   assert(printed("ABOVE PAUSED") && zPulses<=1);
   expectIdle();
+  // Complete ordered transport, release, and no automatic retreat.
+  fresh();zHomed=true;batteryAbove();batteryPick();
+  Serial.clearOutput();
+  const auto carryZStart=heightAtZ.size();
+  batteryPlace();
+  assert(batteryStageCompleted && printed("PLACE DONE"));
+  assert(gripper.angle==100);
+  assert(fabs(batteryZAngle()-BATTERY_PLACE_Z)<0.25f);
+  assert(xyEndpointError(xyMeasuredPose(),XYMotion::forward(BATTERY_PLACE))<=0.15f);
+  for(std::size_t i=carryZStart;i<heightAtZ.size();++i)
+    assert(fabs(heightAtZ[i]-BATTERY_CARRY_UP)<0.3f);
+  const auto output=Serial.output.str();
+  assert(output.find("PLACE: LIFT")<output.find("PLACE: ROTATE"));
+  assert(output.find("PLACE: ROTATE")<output.find("PLACE: TRANSFER"));
+  assert(output.find("PLACE: TRANSFER")<output.find("PLACE: LOWER"));
+  count=edges.size();zp=zPulses;batteryPlace();
+  assert(edges.size()==count && zPulses==zp && !batteryStageCompleted);
+  // Stop while lifting: no rotation and no release.
+  fresh();zHomed=true;batteryAbove();batteryPick();
+  Serial.clearOutput();zp=zPulses;stopAfterRisingEdges=edges.size()+1;
+  batteryPlace();
+  assert(printed("PLACE PAUSED") && !batteryStageCompleted);
+  assert(zPulses==zp && gripper.angle==20);expectIdle();
+  // A rotation sensor failure also leaves the battery held.
+  fresh();zHomed=true;batteryAbove();batteryPick();
+  Serial.clearOutput();failZ=true;
+  batteryPlace();
+  assert(printed("PLACE PAUSED") && gripper.angle==20);
+  assert(!printed("PLACE: LOWER"));expectIdle();
+  // One command completes a cycle; no repeat loop or stale success on failure.
+  fresh();zHomed=true;Serial.clearOutput();batteryRun();
+  assert(printed("RUN DONE") && gripper.angle==100);
+  assert(xyEndpointError(xyMeasuredPose(),XYMotion::forward(BATTERY_PLACE))<=0.15f);
+  count=edges.size();zp=zPulses;batteryRun();
+  assert(printed("RUN PAUSED at above") && edges.size()==count && zPulses==zp);
+  fresh();Serial.clearOutput();batteryRun();
+  assert(printed("RUN PAUSED at above") && edges.empty());
   std::cout<<"Battery approach: prerequisites, path, endpoint, warning, stop, sensor tests passed\n";
 }
