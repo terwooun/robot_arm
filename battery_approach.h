@@ -6,8 +6,7 @@ const XYMotion::Pose BATTERY_ABOVE = {29.097f, -54.765f};
 const XYMotion::Pose BATTERY_PICK = {14.619f, -56.309f};
 float batteryAboveZ = 28.056f;
 // Home-relative Z confirmed by the latest homez + manual alignment log.
-// Keep explicit target selection after reset for operator review.
-bool batteryZConfirmed = false;
+// Default is restored after reset; abovez is an optional session override.
 bool batteryHadWarning = false;
 
 float batteryZAngle()
@@ -104,10 +103,10 @@ void batteryAbove()
 {
   updateZEncoder();
   const XYMotion::Pose start = xyMeasuredPose();
-  if (!xyCalibrated || !zHomed || !zEncoderOK || !batteryZConfirmed
+  if (!xyCalibrated || !zHomed || !zEncoderOK
       || xySignX!=-1 || xySignY!=1 || fabs(start.a-5)>1 || fabs(start.b+90)>1
       || fabs(batteryZAngle())>0.5f) {
-    Serial.println(F("ABOVE: no motion; requires photo start pose, xycal 5 -90 -1 1, homez, abovez confirmed"));
+    Serial.println(F("ABOVE: no motion; requires photo start pose, xycal 5 -90 -1 1, homez"));
     return;
   }
   const XYMotion::Point target = XYMotion::forward(BATTERY_ABOVE);
@@ -118,7 +117,7 @@ void batteryAbove()
   batteryHadWarning = false;
   if (xyStopRequested()) { Serial.println(F("ABOVE: cancelled before motion")); return; }
   gripper.write(OPEN_ANGLE);
-  Serial.println(F("ABOVE: synchronized XYZ to target; XY 5 mm/s; ! stops; no descent or close"));
+  Serial.println(F("ABOVE: synchronized XYZ to target; XY 8 mm/s; ! stops; no descent or close"));
   if (!xyWaitMicros(500000UL) || !batterySynchronizedMove(start)) {
     digitalWrite(X_PUL,LOW); digitalWrite(Y_PUL,LOW); digitalWrite(Z_PUL,LOW);
     Serial.println(F("ABOVE PAUSED: sequence ended; inspect pos/e, no automatic retry")); return;
@@ -143,15 +142,15 @@ bool batteryHandleCommand(const String &input)
     Serial.println(F("ABOVE: A 29.097 B -54.765; forward 174.087 up -39.659 mm"));
     Serial.println(F("PICK: A 14.619 B -56.309; forward 182.681 up -69.559 mm"));
     Serial.print(F("Saved Z DEG: ")); Serial.println(batteryAboveZ);
-    Serial.println(F("abovez DEG: confirm taught home-relative Z; not a motor command")); return true;
+    Serial.println(F("abovez DEG: optional home-relative Z override; not a motor command")); return true;
   }
   if (input.startsWith("abovez ")) {
     float value;
     if (!xyParseNumbers(input,&value,1) || value<0 || value>45) {
       Serial.println(F("ERROR: abovez requires confirmed home-relative angle 0..45 DEG")); return true;
     }
-    batteryAboveZ=value; batteryZConfirmed=true;
-    Serial.println(F("ABOVE Z registered; no motion; cleared on reset")); return true;
+    batteryAboveZ=value;
+    Serial.println(F("ABOVE Z overridden; no motion; reset restores 28.056 DEG")); return true;
   }
   if (input.startsWith("above") || input.startsWith("startpose") || input.startsWith("pickinfo")) {
     Serial.println(F("ERROR: use startpose, abovez DEG, above, pickinfo")); return true;

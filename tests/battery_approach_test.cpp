@@ -42,7 +42,7 @@ void fresh() {
   zEncoderCount=0;simulatedZ=0;zPulses=0;zDirection=zPulse=LOW;
   zResponse=1;zTimes.clear();xyAtZ.clear();
   stopZ=failZ=false;zEncoderOK=true;zHomed=false;
-  batteryZConfirmed=false;batteryAboveZ=28.056f;
+  batteryAboveZ=28.056f;
   xyOperatorStopped=false;
   batteryHandleCommand(String("startpose"));
 }
@@ -50,10 +50,9 @@ int main() {
   fresh();
   batteryAbove(); assert(edges.empty() && zPulses==0);
   zHomed=true;
-  batteryAbove(); assert(edges.empty() && zPulses==0);
-  batteryHandleCommand(String("abovez nan")); assert(!batteryZConfirmed);
-  batteryHandleCommand(String("abovez 46")); assert(!batteryZConfirmed);
-  batteryHandleCommand(String("abovez 28.056"));
+  batteryHandleCommand(String("abovez nan")); assert(batteryAboveZ==28.056f);
+  batteryHandleCommand(String("abovez 46")); assert(batteryAboveZ==28.056f);
+  // The stored default must work without an abovez command.
   batteryAbove();
   assert(printed("ABOVE DONE"));
   assert(gripper.angle==100);
@@ -66,12 +65,12 @@ int main() {
   assert(std::labs(signedPulses(X_PUL))==std::lround((BATTERY_ABOVE.b+90)*PULSE_PER_DEGREE));
   assert(std::labs(signedPulses(Y_PUL))==std::lround((BATTERY_ABOVE.a-5)*PULSE_PER_DEGREE));
   assert(zPulses==std::lround(28.056*PULSE_PER_DEGREE));
-  assert(clockUs<30000000UL); // Mock wall time: one continuous move, not old sequential replay.
+  assert(clockUs<20000000UL); // Mock wall time: one continuous move, not old sequential replay.
   assert(!batteryPathValid(XYMotion::Pose{0,5})); // Singular configuration rejected.
   auto count=edges.size(); auto zp=zPulses;
   batteryAbove(); assert(edges.size()==count && zPulses==zp); // Not replayed from target.
   for(int fault=1;fault<3;++fault) {
-    fresh();zHomed=true;batteryZConfirmed=true;
+    fresh();zHomed=true;
 
     if(fault==1) stopZ=true;
     if(fault==2) failZ=true;
@@ -82,8 +81,11 @@ int main() {
     assert(zPulses<=16);
     expectIdle();
   }
+  fresh();
+  batteryHandleCommand(String("abovez 27")); assert(batteryAboveZ==27);
+  fresh(); assert(batteryAboveZ==28.056f);
   // Manual-alignment mode must advance past XY and Z following warnings.
-  fresh(); zHomed=true; batteryZConfirmed=true;
+  fresh(); zHomed=true;
   feedbackScale=0.9; zResponse=0.97;
   batteryAbove();
   assert(printed("ABOVE FINISHED WITH WARNING"));
@@ -92,13 +94,13 @@ int main() {
   assert(zPulses>0 && xyCalibrated);
   expectIdle();
   // No encoder motion still terminates after bounded requested segments.
-  fresh(); zHomed=true; batteryZConfirmed=true;
+  fresh(); zHomed=true;
   feedbackMultiplier=0;
   batteryAbove();
   assert(printed("ABOVE FINISHED WITH WARNING"));
   assert(zPulses>0 && edges.size()<10000);
   // An operator stop promptly stops all synchronized axes.
-  fresh(); zHomed=true; batteryZConfirmed=true; stopAfterRisingEdges=1;
+  fresh(); zHomed=true;  stopAfterRisingEdges=1;
   batteryAbove();
   assert(printed("ABOVE PAUSED") && zPulses<=1);
   expectIdle();
