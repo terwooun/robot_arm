@@ -9,10 +9,10 @@
 // Physical link vectors: a = base -> elbow (Y), b = elbow -> wrist (X).
 // These are absolute angles from the forward horizontal, positive toward up.
 // A fixed gripper offset cancels in relative moves while its orientation is held.
-const float XY_MAX_MOVE_MM = 10.0f;
+const float XY_MAX_MOVE_MM = 50.0f;
 const float XY_SEGMENT_MM = 0.5f;
-const float XY_MAX_COMMAND_DEG = 5.0f;
-const float XY_CAL_WINDOW_DEG = 35.0f;
+const float XY_MAX_COMMAND_DEG = 45.0f;
+const float XY_CAL_WINDOW_DEG = 60.0f;
 const float XY_MAX_ERROR_DEG = 1.0f;
 const float XY_START_ERROR_DEG = 0.15f;
 // Only small residuals may enter endpoint correction; larger errors still abort.
@@ -91,7 +91,7 @@ void xyHelp()
   Serial.println(F("xm 1 = forward 1 mm; ym 1 = up 1 mm; xy 1 1 = diagonal"));
   Serial.println(F("xycheck 1 0 = preview only; pos = encoder-derived wrist position"));
   Serial.println(F("! + Send = stop during mm motion; other input during mm motion is discarded"));
-  Serial.println(F("Initial test limits: 10 mm/move, 5 DEG/move, +/-35 DEG from calibration"));
+  Serial.println(F("Initial test limits: 50 mm/move, 45 DEG/move, +/-60 DEG from calibration"));
   Serial.println(F("h = switch inputs; homez = Z homing; X/Y homing not implemented"));
 }
 
@@ -275,7 +275,7 @@ void xyMove(float deltaForward, float deltaUp, bool preview)
   const float distance = sqrt(deltaForward * deltaForward + deltaUp * deltaUp);
   if (!isfinite(distance) || distance <= 0.0f || distance > XY_MAX_MOVE_MM)
   {
-    Serial.println(F("ERROR: XY distance must be >0 and <=10 mm"));
+    Serial.println(F("ERROR: XY distance must be >0 and <=50 mm"));
     return;
   }
   long startX, startY;
@@ -378,7 +378,7 @@ bool xyHandleCommand(const String &input)
     xySignX = (int)values[2]; xySignY = (int)values[3];
     xyReadCounts(xyReferenceX, xyReferenceY);
     xyCalibrated = true;
-    Serial.println(F("XY CALIBRATED: no motion; temporary test window +/-35 DEG"));
+    Serial.println(F("XY CALIBRATED: no motion; temporary test window +/-60 DEG"));
     xyPrintPosition();
     return true;
   }

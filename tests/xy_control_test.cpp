@@ -200,7 +200,7 @@ static void parserAndCalibration() {
                            "xm 1e309", "xm 1e39", "xm 999999999999999999999",
                            "xm 1junk", "xm 1 2", "xy 1 2 3", "xy 1 NaN",
                            "xycalibration 1", "xymm 1", "ymjunk 1",
-                           "xm 0", "xy 0 0", "xm 10.01", "xy 8 8"}) {
+                           "xm 0", "xy 0 0", "xm 50.01", "xy 40 40"}) {
     expectNoMotion(text);
     assert(printed("ERROR"));
   }
@@ -278,8 +278,7 @@ static void synchronizedMoves() {
 static void rejectsWholePathBeforePulsing() {
   reset();
   calibrate("xycal 0 12 1 1");
-  expectNoMotion("xm -5");
-  assert(printed("exceeds joint test window"));
+
   expectNoMotion("xm 10");
   assert(printed("unreachable"));
 
@@ -412,6 +411,31 @@ static void batteryApproachWindow() {
   expectIdle();
 }
 
+static void extendedMoves() {
+  for (const char *move : {"xm 50", "ym 50", "xy 30 40"}) {
+    reset();
+    calibrate("xycal 5 -90 -1 1");
+    command(move);
+    assert(printed("XY DONE"));
+    assert(xyCalibrated);
+    expectIdle();
+  }
+  reset();
+  calibrate("xycal 5 -90 -1 1");
+  expectNoMotion("xycheck 50 0");
+  assert(printed("XY PREVIEW"));
+  expectNoMotion("xy 50 50");
+  assert(printed("distance"));
+  const XYMotion::Pose start = {5, -90};
+  assert(!xyWithinWindow(XYMotion::Pose{51, -90}, start));
+  assert(!xyWithinWindow(XYMotion::Pose{66, -90}, XYMotion::Pose{65, -90}));
+  stopAfterRisingEdges = 20;
+  command("xm 50");
+  assert(printed("XY ABORTED"));
+  assert(!xyCalibrated);
+  expectIdle();
+}
+
 int main() {
   parserAndCalibration();
   previewDoesNotMutatePosition();
@@ -421,5 +445,6 @@ int main() {
   recordedResidualAndLimits();
   boundedEndpointCorrection();
   batteryApproachWindow();
+  extendedMoves();
   std::cout << "XY control mock integration tests passed\n";
 }
