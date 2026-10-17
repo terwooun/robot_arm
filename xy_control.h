@@ -23,8 +23,8 @@ const float XY_ENDPOINT_TOLERANCE_MM = 0.15f;
 const int XY_CORRECTION_ATTEMPTS = 3;
 const long XY_CORRECTION_STEP_PULSES = 6;
 const long XY_CORRECTION_TOTAL_PULSES = 15; // Per axis, total absolute extra travel.
-const float XY_FEED_MM_S = 12.0f;
-const float XY_ACCEL_MM_S2 = 8.0f;
+const float XY_FEED_MM_S = 20.0f;
+const float XY_ACCEL_MM_S2 = 12.0f;
 
 bool xyCalibrated = false;
 bool xyLastMoveVerified = false;

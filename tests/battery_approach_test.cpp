@@ -22,7 +22,8 @@ std::vector<unsigned long> zTimes;
 std::vector<std::size_t> xyAtZ;
 std::vector<float> heightAtZ;
 std::vector<int> gripperEvents;
-struct GripperMock { int angle=20; void write(int n){angle=n;gripperEvents.push_back(n);} int read(){return angle;} } gripper;
+std::vector<XYMotion::Point> gripperPositions;
+struct GripperMock { int angle=20; void write(int n){angle=n;gripperEvents.push_back(n);gripperPositions.push_back(XYMotion::forward(xyMeasuredPose()));} int read(){return angle;} } gripper;
 const int OPEN_ANGLE=100, CLOSE_ANGLE=20;
 int digitalRead(int) { return LOW; }
 void digitalWrite(int pin,int value) {
@@ -51,7 +52,7 @@ void homeZ() {
 void fresh() {
   reset();
   zEncoderCount=0;simulatedZ=0;zPulses=0;zDirection=zPulse=LOW;
-  zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();gripperEvents.clear();
+  zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();gripperEvents.clear();gripperPositions.clear();
   stopZ=failZ=failAtSecond=false;homeFailure=false;homeCalls=0;zHomeCancelled=false;zEncoderOK=true;zHomed=false;
   batteryAboveZ=28.056f;
   xyOperatorStopped=false;
@@ -211,6 +212,12 @@ int main() {
   fresh();Serial.clearOutput();batteryRun();
   assert(printed("RUN DONE") && homeCalls==1);
   assert((gripperEvents==std::vector<int>{100,100,20,100,20,100,20,100}));
+  // Check actual commanded grip/release endpoints, including the shifted regrasp.
+  const XYMotion::Point expectedSecond[]={{174.613f,-72.974f},{188.432f,-62.623f},{191.412f,-67.436f},{174.766f,-60.441f}};
+  for(int i=0;i<4;++i) {
+    assert(fabs(gripperPositions[i+4].forward-expectedSecond[i].forward)<0.15f);
+    assert(fabs(gripperPositions[i+4].up-expectedSecond[i].up)<0.15f);
+  }
   assert(xyEndpointError(xyMeasuredPose(),BATTERY_SECOND_RETURN)<=0.15f);
   // Stop at run entry is checked before homing or any servo/motor movement.
   fresh();Serial.input="!";batteryRun();

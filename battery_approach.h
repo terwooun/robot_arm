@@ -10,10 +10,11 @@ const XYMotion::Pose BATTERY_PLACE = {21.276f, -57.929f};
 const float BATTERY_PLACE_Z = 50.081f;
 // Reconstructed from the final position minus later encoder-derived deltas.
 const float BATTERY_CARRY_UP = -12.027f;
-const XYMotion::Pose BATTERY_SECOND_PICK = {17.479f,-65.295f};
-const XYMotion::Pose BATTERY_SECOND_PLACE = {18.669f,-57.347f};
+// User requested +10 mm forward at second pickup/drop; heights unchanged.
+const XYMotion::Point BATTERY_SECOND_PICK = {174.613f,-72.974f};
+const XYMotion::Point BATTERY_SECOND_PLACE = {188.432f,-62.623f};
 // No final pos/e at these two points: reconstructed from measured deltas.
-const XYMotion::Point BATTERY_SECOND_REPICK = {181.412f,-67.436f};
+const XYMotion::Point BATTERY_SECOND_REPICK = {191.412f,-67.436f};
 const XYMotion::Point BATTERY_SECOND_RETURN = {174.766f,-60.441f};
 float batteryAboveZ = 28.056f;
 // Home-relative Z confirmed by the latest homez + manual alignment log.
@@ -133,7 +134,7 @@ void batteryAbove()
   batteryHadWarning = false;
   if (xyStopRequested()) { Serial.println(F("ABOVE: cancelled before motion")); return; }
   gripper.write(OPEN_ANGLE);
-  Serial.println(F("ABOVE: synchronized XYZ to target; XY 12 mm/s; ! stops; no descent or close"));
+  Serial.println(F("ABOVE: synchronized XYZ to target; XY 20 mm/s; ! stops; no descent or close"));
   if (!xyWaitMicros(500000UL) || !batterySynchronizedMove(start)) {
     digitalWrite(X_PUL,LOW); digitalWrite(Y_PUL,LOW); digitalWrite(Z_PUL,LOW);
     Serial.println(F("ABOVE PAUSED: sequence ended; inspect pos/e, no automatic retry")); return;
@@ -351,11 +352,11 @@ void batteryRun()
   batteryHadWarning=false;
   Serial.println(F("RUN: SECOND PICK"));
   // Empty-gripper retreat uses the established high clearance, not low tuning positions.
-  if(!batteryVisit(XYMotion::forward(BATTERY_SECOND_PICK),38.859f,BATTERY_CARRY_UP,true)) {
+  if(!batteryVisit(BATTERY_SECOND_PICK,38.859f,BATTERY_CARRY_UP,true)) {
     batteryRunPause(F("RUN PAUSED at second pick"));return;
   }
   Serial.println(F("RUN: SECOND PLACE"));
-  if(!batteryVisit(XYMotion::forward(BATTERY_SECOND_PLACE),61.526f,-12.704f,false)) {
+  if(!batteryVisit(BATTERY_SECOND_PLACE,61.526f,-12.704f,false)) {
     batteryRunPause(F("RUN PAUSED at second place"));return;
   }
   Serial.println(F("RUN: SECOND REPICK (reconstructed target)"));
@@ -391,9 +392,9 @@ bool batteryHandleCommand(const String &input)
     Serial.println(F(" mm; close 20 DEG; Z unchanged"));
     Serial.println(F("PLACE: A 21.276 B -57.929; Z 50.081 DEG; open 100 DEG"));
     Serial.println(F("CARRY: UP -12.027 mm; first lift also retracts 5 mm"));
-    Serial.println(F("SECOND PICK: A 17.479 B -65.295 Z 38.859"));
-    Serial.println(F("SECOND PLACE: A 18.669 B -57.347 Z 61.526"));
-    Serial.println(F("SECOND REPICK: F 181.412 U -67.436 Z 61.773 (reconstructed)"));
+    Serial.println(F("SECOND PICK: F 174.613 U -72.974 Z 38.859 (+10 mm forward)"));
+    Serial.println(F("SECOND PLACE: F 188.432 U -62.623 Z 61.526 (+10 mm forward)"));
+    Serial.println(F("SECOND REPICK: F 191.412 U -67.436 Z 61.773 (reconstructed)"));
     Serial.println(F("SECOND RETURN: F 174.766 U -60.441 Z 38.216 (reconstructed)"));
     Serial.print(F("Saved Z DEG: ")); Serial.println(batteryAboveZ);
     Serial.println(F("abovez DEG: optional home-relative Z override; not a motor command")); return true;
