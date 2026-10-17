@@ -12,7 +12,7 @@
 const float XY_MAX_MOVE_MM = 10.0f;
 const float XY_SEGMENT_MM = 0.5f;
 const float XY_MAX_COMMAND_DEG = 5.0f;
-const float XY_CAL_WINDOW_DEG = 15.0f;
+const float XY_CAL_WINDOW_DEG = 35.0f;
 const float XY_MAX_ERROR_DEG = 1.0f;
 const float XY_START_ERROR_DEG = 0.15f;
 // Only small residuals may enter endpoint correction; larger errors still abort.
@@ -91,7 +91,7 @@ void xyHelp()
   Serial.println(F("xm 1 = forward 1 mm; ym 1 = up 1 mm; xy 1 1 = diagonal"));
   Serial.println(F("xycheck 1 0 = preview only; pos = encoder-derived wrist position"));
   Serial.println(F("! + Send = stop during mm motion; other input during mm motion is discarded"));
-  Serial.println(F("Initial test limits: 10 mm/move, 5 DEG/move, +/-15 DEG from calibration"));
+  Serial.println(F("Initial test limits: 10 mm/move, 5 DEG/move, +/-35 DEG from calibration"));
   Serial.println(F("h = switch inputs; homez = Z homing; X/Y homing not implemented"));
 }
 
@@ -378,7 +378,7 @@ bool xyHandleCommand(const String &input)
     xySignX = (int)values[2]; xySignY = (int)values[3];
     xyReadCounts(xyReferenceX, xyReferenceY);
     xyCalibrated = true;
-    Serial.println(F("XY CALIBRATED: no motion; temporary test window +/-15 DEG"));
+    Serial.println(F("XY CALIBRATED: no motion; temporary test window +/-35 DEG"));
     xyPrintPosition();
     return true;
   }

@@ -292,7 +292,7 @@ static void rejectsWholePathBeforePulsing() {
   calibrate();
   // An external manual movement outside the calibration window is detected
   // from measured encoder position before the next command starts.
-  simulatedYCount = yEncoderCount = std::lround(-16 * ENC_COUNT_PER_DEGREE);
+  simulatedYCount = yEncoderCount = std::lround(-(XY_CAL_WINDOW_DEG + 1) * ENC_COUNT_PER_DEGREE);
   expectNoMotion("xm 1");
   assert(printed("outside calibration window"));
 }
@@ -390,6 +390,28 @@ static void boundedEndpointCorrection() {
   expectIdle();
 }
 
+static void batteryApproachWindow() {
+  reset();
+  calibrate("xycal 5 -90 -1 1");
+  // Restore the encoder-derived pose reported before the rejected xm 10.
+  simulatedYCount = yEncoderCount = std::lround(-(18.213 - 5) * ENC_COUNT_PER_DEGREE);
+  simulatedXCount = xEncoderCount = std::lround((-77.723 + 90) * ENC_COUNT_PER_DEGREE);
+  const XYMotion::Point before = XYMotion::forward(xyMeasuredPose());
+  for (int i = 0; i < 6; ++i) {
+    command("ym 5");
+    assert(printed("XY DONE"));
+  }
+  for (int i = 0; i < 5; ++i) {
+    command("xm 5");
+    assert(printed("XY DONE"));
+  }
+  const XYMotion::Point after = XYMotion::forward(xyMeasuredPose());
+  assert(std::fabs(after.up - before.up - 30) < 0.5);
+  assert(std::fabs(after.forward - before.forward - 25) < 0.5);
+  assert(xyCalibrated);
+  expectIdle();
+}
+
 int main() {
   parserAndCalibration();
   previewDoesNotMutatePosition();
@@ -398,5 +420,6 @@ int main() {
   stopAndFollowingErrors();
   recordedResidualAndLimits();
   boundedEndpointCorrection();
+  batteryApproachWindow();
   std::cout << "XY control mock integration tests passed\n";
 }
