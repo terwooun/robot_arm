@@ -10,11 +10,12 @@ const XYMotion::Pose BATTERY_PLACE = {21.276f, -57.929f};
 const float BATTERY_PLACE_Z = 50.081f;
 // Reconstructed from the final position minus later encoder-derived deltas.
 const float BATTERY_CARRY_UP = -12.027f;
-// User requested +10 mm forward at second pickup/drop; heights unchanged.
+// Second pickup retains +10 mm; drop/regrasp retract 9 mm from prior targets.
+// Heights and Z targets are unchanged.
 const XYMotion::Point BATTERY_SECOND_PICK = {174.613f,-72.974f};
-const XYMotion::Point BATTERY_SECOND_PLACE = {188.432f,-62.623f};
+const XYMotion::Point BATTERY_SECOND_PLACE = {179.432f,-62.623f};
 // No final pos/e at these two points: reconstructed from measured deltas.
-const XYMotion::Point BATTERY_SECOND_REPICK = {191.412f,-67.436f};
+const XYMotion::Point BATTERY_SECOND_REPICK = {182.412f,-67.436f};
 const XYMotion::Point BATTERY_SECOND_RETURN = {174.766f,-60.441f};
 float batteryAboveZ = 28.056f;
 // Home-relative Z confirmed by the latest homez + manual alignment log.
@@ -393,8 +394,8 @@ bool batteryHandleCommand(const String &input)
     Serial.println(F("PLACE: A 21.276 B -57.929; Z 50.081 DEG; open 100 DEG"));
     Serial.println(F("CARRY: UP -12.027 mm; first lift also retracts 5 mm"));
     Serial.println(F("SECOND PICK: F 174.613 U -72.974 Z 38.859 (+10 mm forward)"));
-    Serial.println(F("SECOND PLACE: F 188.432 U -62.623 Z 61.526 (+10 mm forward)"));
-    Serial.println(F("SECOND REPICK: F 191.412 U -67.436 Z 61.773 (reconstructed)"));
+    Serial.println(F("SECOND PLACE: F 179.432 U -62.623 Z 61.526 (-9 mm from previous target)"));
+    Serial.println(F("SECOND REPICK: F 182.412 U -67.436 Z 61.773 (reconstructed; -9 mm from previous target)"));
     Serial.println(F("SECOND RETURN: F 174.766 U -60.441 Z 38.216 (reconstructed)"));
     Serial.print(F("Saved Z DEG: ")); Serial.println(batteryAboveZ);
     Serial.println(F("abovez DEG: optional home-relative Z override; not a motor command")); return true;

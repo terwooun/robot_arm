@@ -213,7 +213,7 @@ int main() {
   assert(printed("RUN DONE") && homeCalls==1);
   assert((gripperEvents==std::vector<int>{100,100,20,100,20,100,20,100}));
   // Check actual commanded grip/release endpoints, including the shifted regrasp.
-  const XYMotion::Point expectedSecond[]={{174.613f,-72.974f},{188.432f,-62.623f},{191.412f,-67.436f},{174.766f,-60.441f}};
+  const XYMotion::Point expectedSecond[]={{174.613f,-72.974f},{179.432f,-62.623f},{182.412f,-67.436f},{174.766f,-60.441f}};
   for(int i=0;i<4;++i) {
     assert(fabs(gripperPositions[i+4].forward-expectedSecond[i].forward)<0.15f);
     assert(fabs(gripperPositions[i+4].up-expectedSecond[i].up)<0.15f);
