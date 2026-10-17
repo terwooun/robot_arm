@@ -74,6 +74,8 @@ static unsigned long clockUs = 0;
 static std::vector<Edge> edges;
 static double simulatedXCount = 0, simulatedYCount = 0;
 static int feedbackMultiplier = 1;
+static double feedbackScale = 1;
+static int correctionFault = 0;
 static int stopAfterRisingEdges = 0;
 static int zPolls = 0;
 static bool overlappedPulse = false;
@@ -95,7 +97,12 @@ void digitalWrite(int pin, int value) {
   // A 4000-CPR encoder produces 1.25 count transitions per 3200-PPR
   // motor command pulse. Preserve fractional motion between integer reads.
   double &position = xAxis ? simulatedXCount : simulatedYCount;
-  position += sign * feedbackMultiplier * -1.25;
+  const bool correcting = Serial.output.str().find("XY CORRECT") != std::string::npos;
+  double response = feedbackMultiplier * feedbackScale;
+  if (correcting && correctionFault == 1) response = 0;
+  if (correcting && correctionFault == 2) response = -1;
+  if (correcting && correctionFault == 3) Serial.input += "!";
+  position += sign * response * -1.25;
   if (xAxis) xEncoderCount = std::lround(position);
   else yEncoderCount = std::lround(position);
   if (stopAfterRisingEdges > 0 &&
@@ -116,6 +123,8 @@ static void reset() {
   simulatedXCount = simulatedYCount = 0;
   xEncoderCount = yEncoderCount = 0;
   feedbackMultiplier = 1;
+  feedbackScale = 1;
+  correctionFault = 0;
   stopAfterRisingEdges = 0;
   zPolls = 0;
   overlappedPulse = false;
@@ -345,6 +354,42 @@ static void recordedResidualAndLimits() {
   assert(!xyFeedbackOK(0, 0, 0, 0, XY_START_ERROR_DEG));
 }
 
+static void boundedEndpointCorrection() {
+  for (int fault = 0; fault <= 3; ++fault) {
+    reset();
+    calibrate("xycal 5 -90 -1 1");
+    const XYMotion::Point initial = XYMotion::forward(xyMeasuredPose());
+    const XYMotion::Point target = {initial.forward + 5, initial.up};
+    feedbackScale = 0.92; // Small measured deficit, inside the entry guard.
+    correctionFault = fault;
+    command("xm 5");
+    assert(printed("XY CORRECT"));
+    assert(std::labs(signedPulses(X_PUL)) <= 75 + XY_CORRECTION_TOTAL_PULSES);
+    if (fault == 0) {
+      assert(printed("XY DONE"));
+      assert(xyCalibrated);
+      assert(xyEndpointError(xyMeasuredPose(), target) <= XY_ENDPOINT_TOLERANCE_MM);
+    } else {
+      assert(printed("XY ABORTED"));
+      assert(!printed("XY DONE"));
+      assert(!xyCalibrated);
+    }
+    expectIdle();
+  }
+  reset();
+  calibrate();
+  const XYMotion::Pose start = xyMeasuredPose();
+  XYMotion::Pose goal = {start.a, start.b + 0.3f};
+  assert(!xyCorrectEndpoint(goal, XYMotion::forward(goal), start));
+  assert(edges.empty()); // Large errors never initiate correction.
+  goal.b = start.b + 0.24f;
+  feedbackScale = 0.2;
+  assert(!xyCorrectEndpoint(goal, XYMotion::forward(goal), start));
+  assert(printed("budget") || printed("attempts exhausted"));
+  assert(std::labs(signedPulses(X_PUL)) <= XY_CORRECTION_TOTAL_PULSES);
+  expectIdle();
+}
+
 int main() {
   parserAndCalibration();
   previewDoesNotMutatePosition();
@@ -352,5 +397,6 @@ int main() {
   rejectsWholePathBeforePulsing();
   stopAndFollowingErrors();
   recordedResidualAndLimits();
+  boundedEndpointCorrection();
   std::cout << "XY control mock integration tests passed\n";
 }

@@ -15,9 +15,12 @@ const float XY_MAX_COMMAND_DEG = 5.0f;
 const float XY_CAL_WINDOW_DEG = 15.0f;
 const float XY_MAX_ERROR_DEG = 1.0f;
 const float XY_START_ERROR_DEG = 0.15f;
-// Initial physical tests: tolerate small residual error after settling.
-// This changes acceptance only; it does not correct the actual position.
+// Only small residuals may enter endpoint correction; larger errors still abort.
 const float XY_FINAL_ERROR_DEG = 0.25f;
+const float XY_ENDPOINT_TOLERANCE_MM = 0.15f;
+const int XY_CORRECTION_ATTEMPTS = 3;
+const long XY_CORRECTION_STEP_PULSES = 6;
+const long XY_CORRECTION_TOTAL_PULSES = 15; // Per axis, total absolute extra travel.
 const float XY_FEED_MM_S = 2.0f;
 const float XY_ACCEL_MM_S2 = 2.0f;
 
@@ -188,6 +191,80 @@ void xyAbort()
   xyInvalidateReference();
 }
 
+float xyEndpointError(const XYMotion::Pose &pose, const XYMotion::Point &target)
+{
+  const XYMotion::Point actual = XYMotion::forward(pose);
+  return hypot(actual.forward - target.forward, actual.up - target.up);
+}
+
+// Bounded low-speed endpoint correction, not continuous servo control.
+// Never change the target to the current position or restart the main move.
+bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target,
+                       const XYMotion::Pose &start)
+{
+  long totalX = 0, totalY = 0;
+  for (int attempt = 0; attempt <= XY_CORRECTION_ATTEMPTS; ++attempt)
+  {
+    if (xyStopRequested()) return false;
+    long beforeX, beforeY;
+    xyReadCounts(beforeX, beforeY);
+    const XYMotion::Pose current = xyPoseFromCounts(beforeX, beforeY);
+    const float error = xyEndpointError(current, target);
+    if (!isfinite(error) || !xyWithinWindow(current, start)
+        || fabs(goal.a - current.a) > XY_FINAL_ERROR_DEG
+        || fabs(goal.b - current.b) > XY_FINAL_ERROR_DEG)
+    {
+      Serial.println(F("ERROR: XY correction outside small-error window"));
+      return false;
+    }
+    if (error <= XY_ENDPOINT_TOLERANCE_MM) return true;
+    if (attempt == XY_CORRECTION_ATTEMPTS) break;
+    long stepsX = lround((goal.b - current.b) * xySignX * PULSE_PER_DEGREE);
+    long stepsY = lround((goal.a - current.a) * xySignY * PULSE_PER_DEGREE);
+    const long largest = labs(stepsX) > labs(stepsY) ? labs(stepsX) : labs(stepsY);
+    if (largest > XY_CORRECTION_STEP_PULSES)
+    {
+      stepsX = lround((float)stepsX * XY_CORRECTION_STEP_PULSES / largest);
+      stepsY = lround((float)stepsY * XY_CORRECTION_STEP_PULSES / largest);
+    }
+    if ((stepsX == 0 && stepsY == 0)
+        || totalX + labs(stepsX) > XY_CORRECTION_TOTAL_PULSES
+        || totalY + labs(stepsY) > XY_CORRECTION_TOTAL_PULSES)
+    {
+      Serial.println(F("ERROR: XY correction pulse budget/resolution limit"));
+      return false;
+    }
+    const XYMotion::Pose predicted = {
+      current.a + stepsY * xySignY / (float)PULSE_PER_DEGREE,
+      current.b + stepsX * xySignX / (float)PULSE_PER_DEGREE};
+    if (!xyWithinWindow(predicted, start)
+        || !XYMotion::straightPathValid(current, target, XY_SEGMENT_MM))
+    {
+      Serial.println(F("ERROR: XY correction path rejected"));
+      return false;
+    }
+    Serial.print(F("XY CORRECT ")); Serial.print(attempt + 1);
+    Serial.print(F(": error ")); Serial.print(error, 3);
+    Serial.print(F(" mm; X pulses ")); Serial.print(stepsX);
+    Serial.print(F(", Y pulses ")); Serial.println(stepsY);
+    const long ticks = labs(stepsX) > labs(stepsY) ? labs(stepsX) : labs(stepsY);
+    if (!xyPulsePair(stepsX, stepsY, (unsigned long)ticks * 12000UL)) return false;
+    totalX += labs(stepsX); totalY += labs(stepsY);
+    if (!xyWaitMicros(200000UL)
+        || !xyFeedbackOK(beforeX, beforeY, stepsX, stepsY, XY_FINAL_ERROR_DEG)) return false;
+    updateZEncoder();
+    const float afterError = xyEndpointError(xyMeasuredPose(), target);
+    if (!isfinite(afterError)
+        || (afterError > XY_ENDPOINT_TOLERANCE_MM && afterError > error - 0.02f))
+    {
+      Serial.println(F("ERROR: XY correction not improving; stopped"));
+      return false;
+    }
+  }
+  Serial.println(F("ERROR: XY correction attempts exhausted"));
+  return false;
+}
+
 void xyMove(float deltaForward, float deltaUp, bool preview)
 {
   if (!xyCalibrated)
@@ -266,6 +343,7 @@ void xyMove(float deltaForward, float deltaUp, bool preview)
     previous = next;
   }
   if (!xyWaitMicros(200000UL) || !xyFeedbackOK(startX, startY, sentX, sentY, XY_FINAL_ERROR_DEG)) { xyAbort(); return; }
+  if (!xyCorrectEndpoint(previous, target, start)) { xyAbort(); return; }
   const XYMotion::Point actual = XYMotion::forward(xyMeasuredPose());
   Serial.print(F("XY DONE (encoder-derived): FORWARD ")); Serial.print(actual.forward - origin.forward, 3);
   Serial.print(F(" mm, UP ")); Serial.print(actual.up - origin.up, 3); Serial.println(F(" mm"));
