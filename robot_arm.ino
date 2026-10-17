@@ -320,6 +320,7 @@ void updateZEncoder()
 // ======================================================
 
 #include "z_homing.h"
+#include "battery_approach.h"
 
 void setup()
 {
@@ -485,6 +486,12 @@ void loop()
     input.trim();
     input.toLowerCase();
 
+    if (batteryHandleCommand(input))
+    {
+      Serial.println("Enter command:");
+      return;
+    }
+
     if (input == "homez")
     {
       homeZ();
@@ -578,6 +585,7 @@ void loop()
 
     if (input == "zero")
     {
+      zHomed = false;
       xyInvalidateReference();
       noInterrupts();
 

@@ -472,4 +472,5 @@ int main() {
   extendedMoves();
   smallResidualKeepsReference();
   std::cout << "XY control mock integration tests passed\n";
+  return 0;
 }

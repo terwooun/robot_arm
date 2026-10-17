@@ -8,6 +8,7 @@ const unsigned long Z_HOME_TIMEOUT_MS = 20000UL;
 const unsigned int Z_HOME_SEEK_US = 4000;
 unsigned long zHomeStarted = 0;
 bool zHomeCancelled = false;
+bool zHomed = false;
 enum ZHomeFailure {
   Z_HOME_OK, Z_HOME_NOT_FOUND, Z_HOME_NOT_RELEASED, Z_HOME_SENSOR_ERROR
 };
@@ -74,6 +75,7 @@ bool zHomeTravel(bool positive, float maxDegrees, unsigned int halfPeriod, int t
 
 void homeZ()
 {
+  zHomed = false;
   zHomeStarted = millis();
   zHomeCancelled = false;
   zHomeFailure = Z_HOME_OK;
@@ -131,6 +133,7 @@ void homeZ()
   zLastRaw = raw;
   zEncoderCount = 0;
   zEncoderOK = true;
+  zHomed = true;
   Serial.println(F("Z HOME DONE: Z=0 DEG at released position; switch LOW"));
 }
 
