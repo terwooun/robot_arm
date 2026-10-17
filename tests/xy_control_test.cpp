@@ -460,7 +460,25 @@ static void extendedMoves() {
   expectIdle();
 }
 
+static void continuousAutomaticLift() {
+  reset();
+  calibrate("xycal 14.390811 -56.663719 -1 1");
+  expectNoMotion("ym 58.404"); // Public jogging cap is still 50mm.
+  const XYMotion::Point initial=XYMotion::forward(xyMeasuredPose());
+  Serial.clearOutput();
+  xyMove(0,58.404f,false,true);
+  assert(xyLastMoveCompleted && xyLastMoveVerified);
+  const XYMotion::Point final=XYMotion::forward(xyMeasuredPose());
+  assert(fabs(final.up-initial.up-58.404f)<0.15f);
+  assert(fabs(final.forward-initial.forward)<0.15f);
+  const auto edgeCount=edges.size();
+  xyMove(0,80.01f,false,true);
+  assert(edges.size()==edgeCount && !xyLastMoveCompleted);
+  expectIdle();
+}
+
 int main() {
+  continuousAutomaticLift();
   parserAndCalibration();
   previewDoesNotMutatePosition();
   synchronizedMoves();

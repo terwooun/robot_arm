@@ -128,7 +128,7 @@ void batteryAbove()
   batteryHadWarning = false;
   if (xyStopRequested()) { Serial.println(F("ABOVE: cancelled before motion")); return; }
   gripper.write(OPEN_ANGLE);
-  Serial.println(F("ABOVE: synchronized XYZ to target; XY 10 mm/s; ! stops; no descent or close"));
+  Serial.println(F("ABOVE: synchronized XYZ to target; XY 12 mm/s; ! stops; no descent or close"));
   if (!xyWaitMicros(500000UL) || !batterySynchronizedMove(start)) {
     digitalWrite(X_PUL,LOW); digitalWrite(Y_PUL,LOW); digitalWrite(Z_PUL,LOW);
     Serial.println(F("ABOVE PAUSED: sequence ended; inspect pos/e, no automatic retry")); return;
@@ -206,14 +206,13 @@ bool batteryStraightMove(const XYMotion::Point &target)
   const float distance=hypot(dx,dy);
   if(!isfinite(distance)) return false;
   if(distance<=XY_ENDPOINT_TOLERANCE_MM) return true;
-  const int count=(int)ceil(distance/XY_MAX_MOVE_MM);
-  if(count>4) return false;
-  for(int i=0;i<count;++i) {
-    if(xyStopRequested() || !zEncoderOK || !xyCalibrated) return false;
-    xyMove(dx/count,dy/count,false);
-    if(!xyLastMoveCompleted || !zEncoderOK) return false;
-    if(!xyLastMoveVerified) batteryHadWarning=true;
-  }
+  if(distance>XY_AUTO_MAX_MOVE_MM) return false;
+  if(xyStopRequested() || !zEncoderOK || !xyCalibrated) return false;
+  // One continuous straight move: one acceleration ramp, one final settle/
+  // correction phase. Internal 0.5mm IK samples do not stop the trajectory.
+  xyMove(dx,dy,false,true);
+  if(!xyLastMoveCompleted || !zEncoderOK) return false;
+  if(!xyLastMoveVerified) batteryHadWarning=true;
   return true;
 }
 
@@ -241,7 +240,7 @@ void batteryPlace()
   Serial.println(F("PLACE: lift -> rotate -> transfer -> lower -> open; ! stops; no retreat"));
   bool ok=xyWaitMicros(500000UL); // Allow the preceding close command to settle.
   if(ok) {
-    Serial.println(F("PLACE: LIFT"));
+    Serial.println(F("PLACE: LIFT continuous XY"));
     ok=batteryStraightMove(lift);
   }
   if(ok) {
@@ -255,7 +254,7 @@ void batteryPlace()
     ok=batteryStraightMove(XYMotion::Point{drop.forward,p.up});
   }
   if(ok) {
-    Serial.println(F("PLACE: LOWER"));
+    Serial.println(F("PLACE: LOWER continuous XY"));
     ok=batteryStraightMove(drop);
   }
   updateZEncoder();

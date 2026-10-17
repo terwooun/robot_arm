@@ -10,6 +10,8 @@
 // These are absolute angles from the forward horizontal, positive toward up.
 // A fixed gripper offset cancels in relative moves while its orientation is held.
 const float XY_MAX_MOVE_MM = 50.0f;
+// Internal taught transport only; serial jogging remains limited to 50mm.
+const float XY_AUTO_MAX_MOVE_MM = 80.0f;
 const float XY_SEGMENT_MM = 0.5f;
 const float XY_MAX_COMMAND_DEG = 45.0f;
 const float XY_CAL_WINDOW_DEG = 60.0f;
@@ -21,8 +23,8 @@ const float XY_ENDPOINT_TOLERANCE_MM = 0.15f;
 const int XY_CORRECTION_ATTEMPTS = 3;
 const long XY_CORRECTION_STEP_PULSES = 6;
 const long XY_CORRECTION_TOTAL_PULSES = 15; // Per axis, total absolute extra travel.
-const float XY_FEED_MM_S = 10.0f;
-const float XY_ACCEL_MM_S2 = 5.0f;
+const float XY_FEED_MM_S = 12.0f;
+const float XY_ACCEL_MM_S2 = 8.0f;
 
 bool xyCalibrated = false;
 bool xyLastMoveVerified = false;
@@ -269,7 +271,7 @@ bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target
   return false;
 }
 
-void xyMove(float deltaForward, float deltaUp, bool preview)
+void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = false)
 {
   xyLastMoveVerified = false;
   xyLastMoveCompleted = false;
@@ -279,9 +281,11 @@ void xyMove(float deltaForward, float deltaUp, bool preview)
     return;
   }
   const float distance = sqrt(deltaForward * deltaForward + deltaUp * deltaUp);
-  if (!isfinite(distance) || distance <= 0.0f || distance > XY_MAX_MOVE_MM)
+  const float distanceLimit = automatic ? XY_AUTO_MAX_MOVE_MM : XY_MAX_MOVE_MM;
+  if (!isfinite(distance) || distance <= 0.0f || distance > distanceLimit)
   {
-    Serial.println(F("ERROR: XY distance must be >0 and <=50 mm"));
+    Serial.println(automatic ? F("ERROR: XY automatic distance must be >0 and <=80 mm")
+                             : F("ERROR: XY distance must be >0 and <=50 mm"));
     return;
   }
   long startX, startY;

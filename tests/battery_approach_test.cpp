@@ -150,6 +150,7 @@ int main() {
   fresh();zHomed=true;batteryAbove();batteryPick();
   Serial.clearOutput();
   const auto carryZStart=heightAtZ.size();
+  const auto placeStarted=clockUs;
   batteryPlace();
   assert(batteryStageCompleted && printed("PLACE DONE"));
   assert(gripper.angle==100);
@@ -158,6 +159,14 @@ int main() {
   for(std::size_t i=carryZStart;i<heightAtZ.size();++i)
     assert(fabs(heightAtZ[i]-BATTERY_CARRY_UP)<0.3f);
   const auto output=Serial.output.str();
+  const auto liftText=output.substr(output.find("PLACE: LIFT"),output.find("PLACE: ROTATE")-output.find("PLACE: LIFT"));
+  assert(liftText.find("XY MOVE:")==liftText.rfind("XY MOVE:"));
+  assert(liftText.find("XY MOVE:")!=std::string::npos); // Exactly one >50mm lift.
+  const auto lowerText=output.substr(output.find("PLACE: LOWER"));
+  assert(lowerText.find("XY MOVE:")==lowerText.rfind("XY MOVE:"));
+  assert(lowerText.find("XY MOVE:")!=std::string::npos);
+  assert(clockUs-placeStarted<22000000UL);
+
   assert(output.find("PLACE: LIFT")<output.find("PLACE: ROTATE"));
   assert(output.find("PLACE: ROTATE")<output.find("PLACE: TRANSFER"));
   assert(output.find("PLACE: TRANSFER")<output.find("PLACE: LOWER"));
