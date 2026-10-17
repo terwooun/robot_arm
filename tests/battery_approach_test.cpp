@@ -19,7 +19,7 @@ double zResponse=1;
 std::vector<unsigned long> zTimes;
 std::vector<std::size_t> xyAtZ;
 struct GripperMock { int angle=20; void write(int n){angle=n;} } gripper;
-const int OPEN_ANGLE=100;
+const int OPEN_ANGLE=100, CLOSE_ANGLE=20;
 int digitalRead(int) { return LOW; }
 void digitalWrite(int pin,int value) {
   if(pin==Z_DIR) { zDirection=value; return; }
@@ -44,7 +44,7 @@ void fresh() {
   stopZ=failZ=false;zEncoderOK=true;zHomed=false;
   batteryAboveZ=28.056f;
   xyOperatorStopped=false;
-  batteryHandleCommand(String("startpose"));
+  batteryHandleCommand(String("s"));
 }
 int main() {
   fresh();
@@ -69,6 +69,29 @@ int main() {
   assert(!batteryPathValid(XYMotion::Pose{0,5})); // Singular configuration rejected.
   auto count=edges.size(); auto zp=zPulses;
   batteryAbove(); assert(edges.size()==count && zPulses==zp); // Not replayed from target.
+  // Latest pick is a separate command, leaves Z stationary, closes only at end.
+  Serial.clearOutput();
+  batteryHandleCommand(String("pick"));
+  assert(printed("PICK DONE"));
+  assert(gripper.angle==20 && zPulses==zp);
+  assert(xyEndpointError(xyMeasuredPose(),XYMotion::forward(BATTERY_PICK))<=0.15f);
+  count=edges.size();
+  batteryPick();assert(edges.size()==count); // Reject repeat descent from pick pose.
+  fresh();zHomed=true;
+  batteryPick();assert(edges.empty()); // Cannot pick directly from start pose.
+  fresh();zHomed=true;batteryAbove();
+  Serial.clearOutput();stopAfterRisingEdges=edges.size()+1;
+  batteryPick();assert(printed("PICK PAUSED"));assert(gripper.angle==100);
+  expectIdle();
+  fresh();zHomed=true;batteryAbove();
+  Serial.clearOutput();zEncoderOK=false;
+  count=edges.size();batteryPick();assert(edges.size()==count && gripper.angle==100);
+  fresh();zHomed=true;batteryAbove();
+  Serial.clearOutput();feedbackScale=0.8;
+  batteryPick();
+  assert(printed("PICK FINISHED WITH WARNING"));
+  assert(gripper.angle==20 && xyCalibrated);
+  expectIdle();
   for(int fault=1;fault<3;++fault) {
     fresh();zHomed=true;
 
