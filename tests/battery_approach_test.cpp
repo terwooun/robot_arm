@@ -69,10 +69,27 @@ int main() {
   assert(!batteryPathValid(XYMotion::Pose{0,5})); // Singular configuration rejected.
   auto count=edges.size(); auto zp=zPulses;
   batteryAbove(); assert(edges.size()==count && zPulses==zp); // Not replayed from target.
+  const XYMotion::Point taughtPick=XYMotion::forward(BATTERY_PICK);
+  assert(fabs(taughtPick.forward-182.181f)<0.002f);
+  assert(fabs(taughtPick.up+70.431f)<0.002f);
   // Latest pick is a separate command, leaves Z stationary, closes only at end.
   Serial.clearOutput();
+  const auto pickEdgesBegin=edges.size();
+  const auto pickStarted=clockUs;
+  const XYMotion::Pose pickStart=xyMeasuredPose();
   batteryHandleCommand(String("pick"));
   assert(printed("PICK DONE"));
+  assert(!printed("XY MOVE:")); // No sequence of separately stopped XY moves.
+  assert(printed("synchronized XY"));
+  unsigned long firstX=0,lastX=0,firstY=0,lastY=0;
+  for(std::size_t i=pickEdgesBegin;i<edges.size();++i) {
+    const Edge &edge=edges[i];
+    if(edge.pin==X_PUL) {if(!firstX)firstX=edge.time;lastX=edge.time;}
+    if(edge.pin==Y_PUL) {if(!firstY)firstY=edge.time;lastY=edge.time;}
+  }
+  assert(firstX && firstY && firstX<lastY && firstY<lastX);
+  assert(clockUs-pickStarted<10000000UL);
+  assert(batteryPathValid(pickStart,BATTERY_PICK));
   assert(gripper.angle==20 && zPulses==zp);
   assert(xyEndpointError(xyMeasuredPose(),XYMotion::forward(BATTERY_PICK))<=0.15f);
   count=edges.size();
@@ -113,7 +130,7 @@ int main() {
   batteryAbove();
   assert(printed("ABOVE FINISHED WITH WARNING"));
   assert(!printed("ABOVE PAUSED"));
-  assert(printed("WARNING: ABOVE Z"));
+  assert(printed("WARNING: AUTO Z"));
   assert(zPulses>0 && xyCalibrated);
   expectIdle();
   // No encoder motion still terminates after bounded requested segments.

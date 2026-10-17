@@ -3,7 +3,9 @@
 
 // Recorded encoder-derived poses, not universal mechanical coordinates.
 const XYMotion::Pose BATTERY_ABOVE = {29.097f, -54.765f};
-const XYMotion::Pose BATTERY_PICK = {15.732f, -55.702f};
+// Reconstructed from last pos + three encoder-derived adjustments;
+// power was switched off before a final pos/e snapshot. Recheck physically.
+const XYMotion::Pose BATTERY_PICK = {14.390811f, -56.663719f};
 float batteryAboveZ = 28.056f;
 // Home-relative Z confirmed by the latest homez + manual alignment log.
 // Default is restored after reset; abovez is an optional session override.
@@ -16,25 +18,27 @@ float batteryZAngle()
 
 // Joint-space interpolation: all three axes share one DDA progress variable.
 // The wrist follows a curved path, not the previous lift/rotate/advance route.
-bool batteryPathValid(const XYMotion::Pose &start)
+bool batteryPathValid(const XYMotion::Pose &start, const XYMotion::Pose &goal = BATTERY_ABOVE)
 {
   for (int i=0; i<=200; ++i) {
     const float f = i/200.0f;
-    const XYMotion::Pose p = {start.a+(BATTERY_ABOVE.a-start.a)*f,
-                              start.b+(BATTERY_ABOVE.b-start.b)*f};
+    const XYMotion::Pose p = {start.a+(goal.a-start.a)*f,
+                              start.b+(goal.b-start.b)*f};
     if (!xyWithinWindow(p,start)) return false;
   }
   return true;
 }
 
-bool batterySynchronizedMove(const XYMotion::Pose &start)
+bool batterySynchronizedMove(const XYMotion::Pose &start,
+                             const XYMotion::Pose &goal = BATTERY_ABOVE, bool rotateZ = true)
 {
   long beforeX,beforeY;
   xyReadCounts(beforeX,beforeY);
-  const float dz=batteryAboveZ-batteryZAngle();
+  const float targetZ=rotateZ ? batteryAboveZ : batteryZAngle();
+  const float dz=rotateZ ? targetZ-batteryZAngle() : 0.0f;
   if (!isfinite(dz) || fabs(dz)>45 || !zEncoderOK) return false;
-  const long sx=lround((BATTERY_ABOVE.b-start.b)*xySignX*PULSE_PER_DEGREE);
-  const long sy=lround((BATTERY_ABOVE.a-start.a)*xySignY*PULSE_PER_DEGREE);
+  const long sx=lround((goal.b-start.b)*xySignX*PULSE_PER_DEGREE);
+  const long sy=lround((goal.a-start.a)*xySignY*PULSE_PER_DEGREE);
   const long sz=lround(dz*PULSE_PER_DEGREE);
   const long nx=labs(sx), ny=labs(sy), nz=labs(sz);
   const long xyTicks=nx>ny ? nx:ny;
@@ -46,7 +50,7 @@ bool batterySynchronizedMove(const XYMotion::Pose &start)
   digitalWrite(Z_DIR,(sz>=0)!=Z_DIR_INVERT ? HIGH:LOW);
   if (!xyWaitMicros(20000UL)) return false;
   long ex=ticks/2,ey=ticks/2,ez=ticks/2;
-  const float da=BATTERY_ABOVE.a-start.a, db=BATTERY_ABOVE.b-start.b;
+  const float da=goal.a-start.a, db=goal.b-start.b;
   // Integrate the XY wrist arc for a smooth acceleration/deceleration envelope.
   float length=0;
   XYMotion::Point previous=XYMotion::forward(start);
@@ -86,15 +90,15 @@ bool batterySynchronizedMove(const XYMotion::Pose &start)
   if(!zEncoderOK) return false;
   const bool small=xyFeedbackOK(beforeX,beforeY,sx,sy,XY_FINAL_ERROR_DEG);
   if(small) {
-    if(!xyCorrectEndpoint(BATTERY_ABOVE,XYMotion::forward(BATTERY_ABOVE),start))
+    if(!xyCorrectEndpoint(goal,XYMotion::forward(goal),start))
       batteryHadWarning=true;
     if(xyOperatorStopped) return false;
   } else batteryHadWarning=true;
-  const float error=batteryZAngle()-batteryAboveZ;
+  const float error=batteryZAngle()-targetZ;
   if(!isfinite(error)) return false;
   if(fabs(error)>0.25f) {
     batteryHadWarning=true;
-    Serial.print(F("WARNING: ABOVE Z angle error DEG: "));Serial.println(error);
+    Serial.print(F("WARNING: AUTO Z angle error DEG: "));Serial.println(error);
   }
   return true;
 }
@@ -131,8 +135,7 @@ void batteryAbove()
   xyPrintPosition();
 }
 
-// Taught intermediate positions retain the user's forward adjustments during
-// descent. Z stays at the aligned approach angle; do not rotate inside the jaws.
+// One synchronized XY move to the corrected pick pose; Z stays stationary.
 void batteryPick()
 {
   updateZEncoder();
@@ -143,61 +146,25 @@ void batteryPick()
     Serial.println(F("PICK: no motion; requires aligned above position and Z near 27.957 DEG"));
     return;
   }
-  const XYMotion::Point points[] = {
-    {176.955f,-39.532f}, // forward adjustment above battery
-    {177.014f,-49.448f},
-    {177.019f,-64.485f},
-    {181.959f,-64.515f}, // user's forward adjustment during descent
-    {181.940f,-66.417f},
-    XYMotion::forward(BATTERY_PICK)
-  };
-  const int count=sizeof(points)/sizeof(points[0]);
-  XYMotion::Pose previous=start;
-  // Reject the entire requested path before opening or moving.
-  for(int j=0;j<count;++j) {
-    const XYMotion::Point origin=XYMotion::forward(previous);
-    const float distance=hypot(points[j].forward-origin.forward,points[j].up-origin.up);
-    if(distance>XY_MAX_MOVE_MM || !XYMotion::straightPathValid(previous,points[j],XY_SEGMENT_MM)) {
-      Serial.println(F("PICK: no motion; path rejected"));return;
-    }
-    const int segments=(int)ceil(distance/XY_SEGMENT_MM);
-    const XYMotion::Pose legStart=previous;
-    for(int i=1;i<=segments;++i) {
-      const float f=(float)i/segments;
-      const XYMotion::Point p={origin.forward+(points[j].forward-origin.forward)*f,
-                               origin.up+(points[j].up-origin.up)*f};
-      XYMotion::Pose next;
-      if(!XYMotion::inverse(p,previous,next) || !xyWithinWindow(next,legStart)) {
-        Serial.println(F("PICK: no motion; joint path rejected"));return;
-      }
-      previous=next;
-    }
+  if(!batteryPathValid(start,BATTERY_PICK)) {
+    Serial.println(F("PICK: no motion; joint path rejected"));return;
   }
   xyOperatorStopped=false;
-  bool warning=false;
+  batteryHadWarning=false;
   if(xyStopRequested()) {Serial.println(F("PICK PAUSED: cancelled before motion"));return;}
   gripper.write(OPEN_ANGLE);
-  Serial.println(F("PICK: open, taught descent/forward adjustments, close; no lift; ! stops"));
-  bool ok=xyWaitMicros(500000UL);
-  for(int i=0;ok && i<count;++i) {
-    if(xyStopRequested() || !zEncoderOK) {ok=false;break;}
-    const XYMotion::Point p=XYMotion::forward(xyMeasuredPose());
-    const float dx=points[i].forward-p.forward, dy=points[i].up-p.up;
-    if(hypot(dx,dy)<=XY_ENDPOINT_TOLERANCE_MM) continue;
-    xyMove(dx,dy,false);
-    ok=xyLastMoveCompleted && zEncoderOK;
-    if(!xyLastMoveVerified) warning=true;
-  }
+  Serial.println(F("PICK: open, synchronized XY to target, close; Z held; no lift; ! stops"));
+  const bool ok=xyWaitMicros(500000UL) && batterySynchronizedMove(start,BATTERY_PICK,false);
   updateZEncoder();
   if(!ok || xyStopRequested() || !zEncoderOK) {
     digitalWrite(X_PUL,LOW);digitalWrite(Y_PUL,LOW);digitalWrite(Z_PUL,LOW);
     Serial.println(F("PICK PAUSED: close skipped; inspect pos/e"));return;
   }
   const float error=xyEndpointError(xyMeasuredPose(),XYMotion::forward(BATTERY_PICK));
-  if(error>XY_ENDPOINT_TOLERANCE_MM) warning=true;
+  if(error>XY_ENDPOINT_TOLERANCE_MM) batteryHadWarning=true;
   Serial.print(F("PICK XY endpoint error mm: "));Serial.println(error);
   gripper.write(CLOSE_ANGLE);
-  Serial.println(warning ? F("PICK FINISHED WITH WARNING: close commanded; verify grip; no lift")
+  Serial.println(batteryHadWarning ? F("PICK FINISHED WITH WARNING: close commanded; verify grip; no lift")
                          : F("PICK DONE: close commanded; verify grip; no lift"));
   xyPrintPosition();
 }
@@ -212,7 +179,12 @@ bool batteryHandleCommand(const String &input)
   if (input == "above") { batteryAbove(); return true; }
   if (input == "pickinfo") {
     Serial.println(F("ABOVE: A 29.097 B -54.765; forward 174.087 up -39.659 mm"));
-    Serial.println(F("PICK: A 15.732 B -55.702; forward 183.125 up -66.596 mm; close 20 DEG; Z unchanged"));
+    const XYMotion::Point pick=XYMotion::forward(BATTERY_PICK);
+    Serial.print(F("PICK: A "));Serial.print(BATTERY_PICK.a,3);
+    Serial.print(F(" B "));Serial.print(BATTERY_PICK.b,3);
+    Serial.print(F("; forward "));Serial.print(pick.forward,3);
+    Serial.print(F(" up "));Serial.print(pick.up,3);
+    Serial.println(F(" mm; close 20 DEG; Z unchanged"));
     Serial.print(F("Saved Z DEG: ")); Serial.println(batteryAboveZ);
     Serial.println(F("abovez DEG: optional home-relative Z override; not a motor command")); return true;
   }
