@@ -325,11 +325,32 @@ static void stopAndFollowingErrors() {
   assert(!xyCalibrated);
 }
 
+static void recordedResidualAndLimits() {
+  reset();
+  // Reported Y command: +76 pulses = +95 expected encoder counts;
+  // actual +88 counts leaves -0.1771875 deg residual after settling.
+  yEncoderCount = -88;
+  assert(xyFeedbackOK(0, 0, 0, 76, XY_FINAL_ERROR_DEG));
+  assert(!xyFeedbackOK(0, 0, 0, 76, XY_START_ERROR_DEG));
+  // Ten missed counts = 0.253125 deg must still fail at the endpoint.
+  yEncoderCount = -85;
+  assert(!xyFeedbackOK(0, 0, 0, 76, XY_FINAL_ERROR_DEG));
+  // Check negative travel as well, and retain the in-motion 1-degree guard.
+  yEncoderCount = 88;
+  assert(xyFeedbackOK(0, 0, 0, -76, XY_FINAL_ERROR_DEG));
+  yEncoderCount = -55;
+  assert(!xyFeedbackOK(0, 0, 0, 76));
+  // Preflight cannot silently accept the increased final tolerance.
+  yEncoderCount = -7;
+  assert(!xyFeedbackOK(0, 0, 0, 0, XY_START_ERROR_DEG));
+}
+
 int main() {
   parserAndCalibration();
   previewDoesNotMutatePosition();
   synchronizedMoves();
   rejectsWholePathBeforePulsing();
   stopAndFollowingErrors();
+  recordedResidualAndLimits();
   std::cout << "XY control mock integration tests passed\n";
 }

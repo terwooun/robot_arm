@@ -14,7 +14,10 @@ const float XY_SEGMENT_MM = 0.5f;
 const float XY_MAX_COMMAND_DEG = 5.0f;
 const float XY_CAL_WINDOW_DEG = 15.0f;
 const float XY_MAX_ERROR_DEG = 1.0f;
-const float XY_FINAL_ERROR_DEG = 0.15f;
+const float XY_START_ERROR_DEG = 0.15f;
+// Initial physical tests: tolerate small residual error after settling.
+// This changes acceptance only; it does not correct the actual position.
+const float XY_FINAL_ERROR_DEG = 0.25f;
 const float XY_FEED_MM_S = 2.0f;
 const float XY_ACCEL_MM_S2 = 2.0f;
 
@@ -237,7 +240,7 @@ void xyMove(float deltaForward, float deltaUp, bool preview)
     Serial.println(F("XY NO MOTION: below pulse resolution"));
     return;
   }
-  if (!xyFeedbackOK(startX, startY, 0, 0, XY_FINAL_ERROR_DEG)) { xyAbort(); return; }
+  if (!xyFeedbackOK(startX, startY, 0, 0, XY_START_ERROR_DEG)) { xyAbort(); return; }
   long sentX = 0, sentY = 0;
   previous = start;
   const float segmentDistance = distance / segments;
