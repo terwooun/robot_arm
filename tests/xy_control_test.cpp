@@ -315,10 +315,13 @@ static void stopAndFollowingErrors() {
     command("xm 10");
     assert(!edges.empty());
     assert(printed("ENCODER FOLLOWING ERROR"));
-    assert(printed("XY ABORTED"));
+    assert(printed("XY FINISHED WITH WARNING"));
+    assert(!printed("XY ABORTED"));
     assert(!printed("XY DONE"));
-    assert(!xyCalibrated);
-    assert(std::labs(signedPulses(Y_PUL)) < 133);
+    assert(xyCalibrated);
+    assert(std::labs(signedPulses(Y_PUL)) == 133);
+    command("pos");
+    assert(!printed("NOT CALIBRATED"));
     expectIdle();
   }
 
@@ -368,6 +371,10 @@ static void boundedEndpointCorrection() {
       assert(printed("XY DONE"));
       assert(xyCalibrated);
       assert(xyEndpointError(xyMeasuredPose(), target) <= XY_ENDPOINT_TOLERANCE_MM);
+    } else if (fault != 3) {
+      assert(printed("XY FINISHED WITH WARNING"));
+      assert(!printed("XY DONE"));
+      assert(xyCalibrated);
     } else {
       assert(printed("XY ABORTED"));
       assert(!printed("XY DONE"));
@@ -411,6 +418,23 @@ static void batteryApproachWindow() {
   expectIdle();
 }
 
+static void smallResidualKeepsReference() {
+  reset();
+  calibrate("xycal 5 -90 -1 1");
+  feedbackScale = 0.88; // About 0.29 degree deficit for a 5mm upward move.
+  command("ym 5");
+  assert(printed("XY FINISHED WITH WARNING"));
+  assert(!printed("XY ABORTED"));
+  assert(!printed("XY CORRECT"));
+  assert(xyCalibrated);
+  assert(signedPulses(Y_PUL) == 76);
+  command("pos");
+  assert(printed("XY LINK"));
+  feedbackScale = 1;
+  command("ym 1");
+  assert(printed("XY DONE"));
+}
+
 static void extendedMoves() {
   for (const char *move : {"xm 50", "ym 50", "xy 30 40"}) {
     reset();
@@ -446,5 +470,6 @@ int main() {
   boundedEndpointCorrection();
   batteryApproachWindow();
   extendedMoves();
+  smallResidualKeepsReference();
   std::cout << "XY control mock integration tests passed\n";
 }
