@@ -13,7 +13,7 @@ const float BATTERY_CARRY_UP = -12.027f;
 // Second pickup retains +10 mm; drop/regrasp retract 9 mm from prior targets.
 // Heights and Z targets are unchanged.
 const XYMotion::Point BATTERY_SECOND_PICK = {174.613f,-72.974f};
-const XYMotion::Point BATTERY_SECOND_PLACE = {179.432f,-62.623f};
+const XYMotion::Point BATTERY_SECOND_PLACE = {180.032f,-62.623f};
 // No final pos/e at these two points: reconstructed from measured deltas.
 const XYMotion::Point BATTERY_SECOND_REPICK = {182.412f,-67.436f};
 const XYMotion::Point BATTERY_SECOND_RETURN = {174.766f,-60.441f};
@@ -306,7 +306,7 @@ void batteryPlace()
 
 // One taught station: lift first, combine high-level XY/Z relocation, descend.
 // Repeated tuning commands are collapsed into a single target for each phase.
-bool batteryVisit(const XYMotion::Point &target,float targetZ,float carryUp,bool closeAfter)
+bool batteryVisit(const XYMotion::Point &target,float targetZ,float carryUp,bool closeAfter,bool rotateZ=true)
 {
   updateZEncoder();
   if(!xyCalibrated || !zHomed || !zEncoderOK || xySignX!=-1 || xySignY!=1
@@ -329,7 +329,7 @@ bool batteryVisit(const XYMotion::Point &target,float targetZ,float carryUp,bool
   const XYMotion::Pose actualLift=xyMeasuredPose();
   if(!XYMotion::inverse(carry,actualLift,carried) || !batteryPathValid(actualLift,carried)) return false;
   Serial.println(F("STATION: TRANSFER XYZ"));
-  if(!batterySynchronizedMove(actualLift,carried,true,targetZ)) return false;
+  if(!batterySynchronizedMove(actualLift,carried,rotateZ,targetZ)) return false;
   Serial.println(F("STATION: LOWER XY"));
   if(!batteryStraightMove(target)) return false;
   updateZEncoder();
@@ -377,7 +377,7 @@ void batteryRun()
   if(!batteryStageCompleted) {batteryRunPause(F("RUN PAUSED at place"));return;}
   warning=warning || batteryHadWarning;
   bool repeat=false;
-  float repeatZOffset=0.0f; // Fixed +0.6 from cycle two, never accumulated.
+  float repeatZOffset=0.0f; // Fixed +0.4 from cycle two, never accumulated.
   while(true) {
     batteryHadWarning=false;
     Serial.println(F("RUN: SECOND PICK"));
@@ -391,7 +391,7 @@ void batteryRun()
       batteryRunPause(F("RUN PAUSED at second place"));return;
     }
     Serial.println(F("RUN: SECOND REPICK (reconstructed target)"));
-    if(!batteryVisit(BATTERY_SECOND_REPICK,62.473f+repeatZOffset,-12.718f,true)) {
+    if(!batteryVisit(BATTERY_SECOND_REPICK,61.526f+repeatZOffset,-12.718f,true,false)) {
       batteryRunPause(F("RUN PAUSED at second repick"));return;
     }
     Serial.println(F("RUN: SECOND RETURN (reconstructed target)"));
@@ -411,8 +411,8 @@ void batteryRun()
     // Regrasp at the actual return target, not the old photo-pose pickup target.
     // batteryVisit lifts the empty gripper before descending to grasp again.
     if(xyStopRequested()) {batteryRunPause(F("RUN STOPPED by !"));return;}
-    repeatZOffset=0.6f;
-    Serial.println(F("RUN: Z OFFSET +0.600 DEG (fixed for all repeat targets)"));
+    repeatZOffset=0.4f;
+    Serial.println(F("RUN: Z OFFSET +0.400 DEG (fixed for all repeat targets)"));
     Serial.println(F("RUN: REPEAT FIRST PICK"));
     if(!batteryVisit(BATTERY_FIRST_RETURN,26.442f+repeatZOffset,-17.718f,true)) {
       batteryRunPause(F("RUN PAUSED at repeat first pick"));return;
@@ -448,8 +448,8 @@ bool batteryHandleCommand(const String &input)
     Serial.println(F("PLACE: A 21.276 B -57.929; Z 50.081 DEG; open 100 DEG"));
     Serial.println(F("CARRY: UP -12.027 mm; first lift also retracts 5 mm"));
     Serial.println(F("SECOND PICK: F 174.613 U -72.974 Z 38.859 (+10 mm forward)"));
-    Serial.println(F("SECOND PLACE: F 179.432 U -62.623 Z 61.526 (-9 mm from previous target)"));
-    Serial.println(F("SECOND REPICK: F 182.412 U -67.436 Z 62.473 (reconstructed; -9 mm from previous target)"));
+    Serial.println(F("SECOND PLACE: F 180.032 U -62.623 Z 61.526 (+0.6 mm forward)"));
+    Serial.println(F("SECOND REPICK: F 182.412 U -67.436; Z held from second place (no rotation)"));
     Serial.println(F("SECOND RETURN: F 174.766 U -60.441 Z 38.216 (reconstructed)"));
     Serial.println(F("FIRST REPICK: F 170.289 U -72.596 Z 51.243 (reconstructed)"));
     Serial.println(F("FIRST RETURN: F 185.543 U -62.871 Z 26.442; lift and repeat until !"));

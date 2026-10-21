@@ -24,8 +24,9 @@ std::vector<float> heightAtZ;
 int stopAfterGripperEvents=10;
 std::vector<int> gripperEvents;
 std::vector<float> gripperZ;
+std::vector<int> gripperZPulses;
 std::vector<XYMotion::Point> gripperPositions;
-struct GripperMock { int angle=20; void write(int n){angle=n;gripperEvents.push_back(n);gripperZ.push_back(zEncoderCount*(float)Z_ENC_SIGN*360.0f/AS5600_CPR/GEAR_RATIO);gripperPositions.push_back(XYMotion::forward(xyMeasuredPose()));if(gripperEvents.size()==(std::size_t)stopAfterGripperEvents) Serial.input+='!';} int read(){return angle;} } gripper;
+struct GripperMock { int angle=20; void write(int n){angle=n;gripperEvents.push_back(n);gripperZPulses.push_back(zPulses);gripperZ.push_back(zEncoderCount*(float)Z_ENC_SIGN*360.0f/AS5600_CPR/GEAR_RATIO);gripperPositions.push_back(XYMotion::forward(xyMeasuredPose()));if(gripperEvents.size()==(std::size_t)stopAfterGripperEvents) Serial.input+='!';} int read(){return angle;} } gripper;
 const int OPEN_ANGLE=100, CLOSE_ANGLE=20;
 int digitalRead(int) { return LOW; }
 void digitalWrite(int pin,int value) {
@@ -54,7 +55,7 @@ void homeZ() {
 void fresh() {
   reset();stopAfterGripperEvents=10;
   zEncoderCount=0;simulatedZ=0;zPulses=0;zDirection=zPulse=LOW;
-  zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();gripperEvents.clear();gripperZ.clear();gripperPositions.clear();
+  zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();gripperEvents.clear();gripperZ.clear();gripperZPulses.clear();gripperPositions.clear();
   stopZ=failZ=failAtSecond=failAtFirstReturn=false;homeFailure=false;homeCalls=0;zHomeCancelled=false;zEncoderOK=true;zHomed=false;
   batteryAboveZ=28.056f;
   batteryGripAngle=-1;batteryGripChangedUs=0;
@@ -212,7 +213,7 @@ int main() {
   assert(homeCalls==1 && gripperEvents.size()==18 && printed("RUN STOPPED by !"));
   assert(!printed("RETURN ABOVE START") && printed("RUN: REPEAT FIRST PICK"));
   assert(fabs(gripperPositions[10].forward-BATTERY_FIRST_RETURN.forward)<0.15f);
-  assert(fabs(gripperZ[10]-27.042f)<0.25f);
+  assert(fabs(gripperZ[10]-26.842f)<0.25f);
   assert(fabs(gripperPositions[12].forward-BATTERY_SECOND_RETURN.forward)<0.15f);
   assert(fabs(gripperPositions[12].up-BATTERY_SECOND_RETURN.up)<0.15f);
   expectIdle();
@@ -223,7 +224,7 @@ int main() {
   assert(printed("RUN CYCLE DONE") && homeCalls==1);
   assert((gripperEvents==std::vector<int>{100,100,20,100,20,100,20,100,20,100}));
   // Check actual commanded grip/release endpoints, including the shifted regrasp.
-  const XYMotion::Point expectedSecond[]={{174.613f,-72.974f},{179.432f,-62.623f},{182.412f,-67.436f},{174.766f,-60.441f}};
+  const XYMotion::Point expectedSecond[]={{174.613f,-72.974f},{180.032f,-62.623f},{182.412f,-67.436f},{174.766f,-60.441f}};
   for(int i=0;i<4;++i) {
     assert(fabs(gripperPositions[i+4].forward-expectedSecond[i].forward)<0.15f);
     assert(fabs(gripperPositions[i+4].up-expectedSecond[i].up)<0.15f);
@@ -233,19 +234,22 @@ int main() {
   assert(fabs(gripperPositions[8].up+72.596f)<0.15f);
   assert(fabs(gripperPositions[9].forward-185.543f)<0.15f);
   assert(fabs(gripperPositions[9].up+62.871f)<0.15f);
-  assert(fabs(gripperZ[6]-62.473f)<0.25f);
+  assert(fabs(gripperZ[6]-61.526f)<0.25f);
+  assert(gripperZPulses[5]==gripperZPulses[6]); // No Z pulses from release to regrasp.
   assert(fabs(gripperZ[8]-51.243f)<0.25f);
   assert(fabs(gripperZ[9]-26.442f)<0.25f);
   // ! after repeat pickup retains the closed gripper, skips the next transfer.
   fresh();stopAfterGripperEvents=11;Serial.clearOutput();batteryRun();
   assert(gripper.angle==20 && gripperEvents.size()==11 && !batteryStageCompleted);
   expectIdle();
-  // Third-cycle offset remains +0.6, not +1.2; home remains initial-only.
+  // Third-cycle offset remains +0.4, not +0.8; home remains initial-only.
   fresh();stopAfterGripperEvents=26;Serial.clearOutput();batteryRun();
   assert(homeCalls==1 && gripperEvents.size()==26);
-  assert(fabs(gripperZ[18]-27.042f)<0.25f);
-  assert(fabs(gripperZ[20]-38.816f)<0.25f);
-  assert(fabs(gripperZ[25]-27.042f)<0.25f);
+  assert(fabs(gripperZ[18]-26.842f)<0.25f);
+  assert(fabs(gripperZ[20]-38.616f)<0.25f);
+  assert(fabs(gripperZ[25]-26.842f)<0.25f);
+  assert(gripperZPulses[13]==gripperZPulses[14]);
+  assert(gripperZPulses[21]==gripperZPulses[22]);
   expectIdle();
   // Grip wait credits elapsed time and does not restart for the same command.
   fresh();batteryCommandGrip(OPEN_ANGLE);clockUs+=500000UL;
