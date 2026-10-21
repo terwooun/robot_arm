@@ -102,7 +102,7 @@ inline bool inverse(const Point &target, const Pose &reference, Pose &result) {
 // The finite sample cap prevents a caller-supplied tiny spacing from blocking
 // an AVR indefinitely. At 0.5 mm, every possible workspace chord fits it.
 inline bool straightPathValid(const Pose &start, const Point &target,
-                              float maxSegmentMM = 0.5f) {
+                              float maxSegmentMM = 0.5f, bool samplePath = true) {
   if (!valid(start) || !finiteNumber(maxSegmentMM) || maxSegmentMM <= 0.0f)
     return false;
   Pose finalPose;
@@ -126,6 +126,8 @@ inline bool straightPathValid(const Pose &start, const Point &target,
 
   const float segmentCount = ceilf(sqrtf(distanceSquared) / maxSegmentMM);
   if (!finiteNumber(segmentCount) || segmentCount > 4096.0f) return false;
+  // Callers with their own full sampled joint-window pass can skip duplicate IK.
+  if (!samplePath) return true;
   const unsigned int segments = static_cast<unsigned int>(segmentCount);
   Pose previous = start;
   for (unsigned int i = 1; i <= segments; ++i) {

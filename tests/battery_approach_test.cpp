@@ -77,7 +77,7 @@ int main() {
   assert(zPulse==LOW);
   assert(!zTimes.empty() && xyAtZ.front()<10 && xyAtZ.back()>edges.size()/2);
   assert(zTimes.front()<edges.back().time && zTimes.back()>edges.front().time);
-  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=2666);
+  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=1332);
   assert(std::labs(signedPulses(X_PUL))==std::lround((BATTERY_ABOVE.b+90)*PULSE_PER_DEGREE));
   assert(std::labs(signedPulses(Y_PUL))==std::lround((BATTERY_ABOVE.a-5)*PULSE_PER_DEGREE));
   assert(zPulses==std::lround(28.056*PULSE_PER_DEGREE));
@@ -282,18 +282,43 @@ int main() {
   auto zStarted=clockUs;
   assert(batterySynchronizedMove(xyMeasuredPose(),xyMeasuredPose(),true,5));
   const auto emptyZTime=clockUs-zStarted;
-  assert(batteryZSpeedScale()==3.0f);
+  assert(batteryZSpeedScale()==6.0f);
   fresh();zHomed=true;gripper.angle=CLOSE_ANGLE;zStarted=clockUs;
   assert(batterySynchronizedMove(xyMeasuredPose(),xyMeasuredPose(),true,5));
-  assert(emptyZTime<clockUs-zStarted && batteryZSpeedScale()==2.0f);
-  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=4000);
+  assert(emptyZTime<clockUs-zStarted && batteryZSpeedScale()==4.0f);
+  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=2000);
+  // Equal-joint XY move: empty DDA ticks stay constant, loaded move retains ramp.
+  unsigned long emptyFirst=0,emptyMiddle=0,loadedFirst=0,loadedMiddle=0;
+  for(int loaded=0;loaded<2;++loaded) {
+    fresh();zHomed=true;gripper.angle=loaded ? CLOSE_ANGLE:OPEN_ANGLE;
+    const auto startPose=xyMeasuredPose();
+    const XYMotion::Pose goal={startPose.a+5,startPose.b+5};
+    assert(batterySynchronizedMove(startPose,goal,false));
+    std::vector<unsigned long> xTimes;
+    for(const auto &edge:edges) if(edge.pin==X_PUL) xTimes.push_back(edge.time);
+    assert(xTimes.size()>=158);
+    const auto first=xTimes[2]-xTimes[1],middle=xTimes[80]-xTimes[79];
+    if(loaded) {loadedFirst=first;loadedMiddle=middle;}
+    else {emptyFirst=first;emptyMiddle=middle;}
+  }
+  assert(std::labs((long)emptyFirst-(long)emptyMiddle)<=200);
+  assert(loadedFirst>loadedMiddle);
+  // The straight Cartesian planner also bypasses acceleration only when requested.
+  fresh();gripper.angle=OPEN_ANGLE;
+  auto profileStart=clockUs;xyMove(0,10,false,true,1.0f,true);
+  assert(xyLastMoveCompleted);const auto constantTime=clockUs-profileStart;
+  fresh();profileStart=clockUs;xyMove(0,10,false,true,1.0f,false);
+  assert(xyLastMoveCompleted && clockUs-profileStart>constantTime);
   // Grip wait credits elapsed time and does not restart for the same command.
+  fresh();batteryCommandGrip(OPEN_ANGLE);
+  auto openWaitStart=clockUs;assert(batteryAwaitGrip());
+  assert(clockUs-openWaitStart>=149000UL && clockUs-openWaitStart<151000UL);
   fresh();batteryCommandGrip(OPEN_ANGLE);clockUs+=500000UL;
   auto waitStart=clockUs;assert(batteryAwaitGrip());assert(clockUs-waitStart<1000UL);
   batteryCommandGrip(OPEN_ANGLE);waitStart=clockUs;
   assert(batteryAwaitGrip() && clockUs-waitStart<1000UL);
   batteryCommandGrip(CLOSE_ANGLE);waitStart=clockUs;
-  assert(batteryAwaitGrip() && clockUs-waitStart>=499000UL);
+  assert(batteryAwaitGrip() && clockUs-waitStart>=199000UL);
   batteryCommandGrip(OPEN_ANGLE);Serial.input="!";assert(!batteryAwaitGrip());
   // Stop at run entry is checked before homing or any servo/motor movement.
   fresh();Serial.input="!";batteryRun();

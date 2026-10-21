@@ -67,7 +67,7 @@ void expectFailure(){
   assert(Serial.output.find("Z HOME DONE")==std::string::npos);
 }
 int main(){
-  assert(Z_HOME_SEEK_US==2000); // Both seek and backoff use the new 2x pulse rate.
+  assert(Z_HOME_SEEK_US==1000); // Both seek and backoff use the new doubled pulse rate.
   const long backoff=lround(5*PULSE_PER_DEGREE);
   reset();homeZ();assert(zEncoderCount==0 && zLastRaw==321 && zHomed);
   assert(position==backoff && pul==LOW && firstDirection==LOW);

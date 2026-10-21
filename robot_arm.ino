@@ -943,6 +943,12 @@ void moveAxis(
     }
 
 
+    // Manual Z: double the previous pulse rate; open gripper uses constant speed.
+    if (pulPin == Z_PUL) {
+      if (gripper.read() == OPEN_ANGLE) pulseDelay = FAST_DELAY_US;
+      pulseDelay /= 2;
+    }
+
     digitalWrite(
       pulPin,
       HIGH

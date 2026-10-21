@@ -272,7 +272,7 @@ bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target
   return false;
 }
 
-void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = false, float speedScale = 1.0f)
+void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = false, float speedScale = 1.0f, bool constantSpeed = false)
 {
   xyLastMoveVerified = false;
   xyLastMoveCompleted = false;
@@ -294,7 +294,7 @@ void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = fa
   const XYMotion::Pose start = xyPoseFromCounts(startX, startY);
   const XYMotion::Point origin = XYMotion::forward(start);
   const XYMotion::Point target = {origin.forward + deltaForward, origin.up + deltaUp};
-  if (!xyWithinWindow(start, start) || !XYMotion::straightPathValid(start, target, XY_SEGMENT_MM))
+  if (!xyWithinWindow(start, start) || !XYMotion::straightPathValid(start, target, XY_SEGMENT_MM, false))
   {
     Serial.println(F("ERROR: XY path unreachable, near singularity or outside calibration window"));
     return;
@@ -348,7 +348,8 @@ void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = fa
     // Approximate a slow acceleration/deceleration profile over the path.
     const float along = (i - 0.5f) * segmentDistance;
     const float edgeDistance = along < distance - along ? along : distance - along;
-    float speed = sqrt(2.0f * XY_ACCEL_MM_S2 * speedScale * speedScale * edgeDistance);
+    float speed = constantSpeed ? XY_FEED_MM_S * speedScale
+      : sqrt(2.0f * XY_ACCEL_MM_S2 * speedScale * speedScale * edgeDistance);
     if (speed > XY_FEED_MM_S * speedScale) speed = XY_FEED_MM_S * speedScale;
     if (speed < 0.25f) speed = 0.25f;
     const unsigned long duration = (unsigned long)(segmentDistance / speed * 1000000.0f);
@@ -358,7 +359,7 @@ void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = fa
     updateZEncoder();
     previous = next;
   }
-  if (!xyWaitMicros(50000UL)) { xyAbort(); return; }
+  if (!xyWaitMicros(automatic ? 20000UL : 50000UL)) { xyAbort(); return; }
   const bool smallResidual = xyFeedbackOK(startX, startY, sentX, sentY, XY_FINAL_ERROR_DEG);
   // Never chase a large error. Complete the requested pulses, retain the
   // reference, and report measured position without claiming target reached.

@@ -25,7 +25,8 @@ float batteryAboveZ = 28.056f;
 // Home-relative Z confirmed by the latest homez + manual alignment log.
 // Default is restored after reset; abovez is an optional session override.
 // Count elapsed planning/logging time toward SG90 travel, without duplicate waits.
-const unsigned long BATTERY_GRIP_SETTLE_US = 500000UL;
+const unsigned long BATTERY_GRIP_OPEN_US = 150000UL;
+const unsigned long BATTERY_GRIP_CLOSE_US = 200000UL;
 unsigned long batteryGripChangedUs = 0;
 int batteryGripAngle = -1;
 void batteryCommandGrip(int angle)
@@ -41,15 +42,16 @@ bool batteryAwaitGrip()
   if(batteryGripAngle!=gripper.read()) {
     batteryGripAngle=gripper.read();batteryGripChangedUs=micros();
   }
+  const unsigned long settle = batteryGripAngle==OPEN_ANGLE ? BATTERY_GRIP_OPEN_US : BATTERY_GRIP_CLOSE_US;
   const unsigned long elapsed=micros()-batteryGripChangedUs;
   if(xyStopRequested()) return false;
-  return elapsed>=BATTERY_GRIP_SETTLE_US || xyWaitMicros(BATTERY_GRIP_SETTLE_US-elapsed);
+  return elapsed>=settle || xyWaitMicros(settle-elapsed);
 }
 
 // Closed or intermediate gripper commands retain the loaded profile.
 // Relative to the preceding version: loaded XY 40->80, empty XY 80->240 mm/s.
 float batterySpeedScale() { return gripper.read()==OPEN_ANGLE ? 6.0f : 2.0f; }
-float batteryZSpeedScale() { return gripper.read()==OPEN_ANGLE ? 3.0f : 2.0f; }
+float batteryZSpeedScale() { return gripper.read()==OPEN_ANGLE ? 6.0f : 4.0f; }
 XYMotion::Point batteryRepeatOffset(const XYMotion::Point &p,float forwardOffset,float upOffset)
 {
   return XYMotion::Point{p.forward+forwardOffset,p.up+upOffset};
@@ -103,25 +105,26 @@ bool batterySynchronizedMove(const XYMotion::Pose &start,
   // Integrate the XY wrist arc for a smooth acceleration/deceleration envelope.
   float length=0;
   XYMotion::Point previous=XYMotion::forward(start);
-  for(int i=1;i<=200;++i) {
-    const float f=i/200.0f;
+  for(int i=1;i<=32;++i) {
+    const float f=i/32.0f;
     const XYMotion::Point p=XYMotion::forward(XYMotion::Pose{start.a+da*f,start.b+db*f});
     length+=hypot(p.forward-previous.forward,p.up-previous.up); previous=p;
   }
-  previous=XYMotion::forward(start);
-  float travelled=0;
+  // Geometry/branch validation remains dense; timing alone uses average arc length.
+  // Avoid trigonometry between individual pulses on the Mega.
+  const float stepDistance=length/(float)ticks;
+  const bool constantSpeed=gripper.read()==OPEN_ANGLE;
+  const unsigned long minimum=nz ? (unsigned long)(4000UL/batteryZSpeedScale())
+                                 : (unsigned long)(START_DELAY_US/speedScale);
   for(long i=0;i<ticks;++i) {
     if(xyStopRequested() || (sz<0 && digitalRead(Z_HOME)==HIGH)) return false;
-    const float f=(i+1.0f)/ticks;
-    const XYMotion::Point p=XYMotion::forward(XYMotion::Pose{start.a+da*f,start.b+db*f});
-    const float stepDistance=hypot(p.forward-previous.forward,p.up-previous.up);
-    const float along=travelled+stepDistance*0.5f;
+    const float along=(i+0.5f)*stepDistance;
     const float edge=fmax(0.0f,fmin(along,length-along));
-    float speed=fmin(XY_FEED_MM_S*speedScale,sqrt(2.0f*XY_ACCEL_MM_S2*speedScale*speedScale*edge));
+    float speed=constantSpeed ? XY_FEED_MM_S*speedScale
+        : fmin(XY_FEED_MM_S*speedScale,sqrt(2.0f*XY_ACCEL_MM_S2*speedScale*speedScale*edge));
     speed=fmax(0.25f,speed);
     unsigned long halfPeriod=(unsigned long)(stepDistance/speed*500000.0f);
     // Z pulse limit follows load state independently of the XY multiplier.
-    const unsigned long minimum=nz ? (unsigned long)(4000UL/batteryZSpeedScale()) : (unsigned long)(START_DELAY_US/speedScale);
     if(halfPeriod<minimum) halfPeriod=minimum;
     ex+=nx; ey+=ny; ez+=nz;
     const bool px=ex>=ticks, py=ey>=ticks, pz=ez>=ticks;
@@ -131,10 +134,9 @@ bool batterySynchronizedMove(const XYMotion::Pose &start,
     const bool keepMoving=xyWaitMicros(halfPeriod);
     digitalWrite(X_PUL,LOW);digitalWrite(Y_PUL,LOW);digitalWrite(Z_PUL,LOW);
     if(!keepMoving || !xyWaitMicros(halfPeriod)) return false;
-    travelled+=stepDistance; previous=p;
     if(i%16==0) {updateZEncoder();if(!zEncoderOK) return false;}
   }
-  if(!xyWaitMicros(50000UL)) return false;
+  if(!xyWaitMicros(20000UL)) return false;
   updateZEncoder();
   if(!zEncoderOK) return false;
   const bool small=xyFeedbackOK(beforeX,beforeY,sx,sy,XY_FINAL_ERROR_DEG);
@@ -171,7 +173,7 @@ void batteryAbove()
   batteryHadWarning = false;
   if (xyStopRequested()) { Serial.println(F("ABOVE: cancelled before motion")); return; }
   batteryCommandGrip(OPEN_ANGLE);
-  Serial.println(F("ABOVE: synchronized XYZ to target; XY empty 240 / loaded 80 mm/s; Z empty 3x / loaded 2x; ! stops; no descent or close"));
+  Serial.println(F("ABOVE: synchronized XYZ to target; XY empty 240 constant / loaded 80 ramp; Z empty 6x / loaded 4x; ! stops; no descent or close"));
   if (!batteryAwaitGrip() || !batterySynchronizedMove(start)) {
     digitalWrite(X_PUL,LOW); digitalWrite(Y_PUL,LOW); digitalWrite(Z_PUL,LOW);
     Serial.println(F("ABOVE PAUSED: sequence ended; inspect pos/e, no automatic retry")); return;
@@ -226,7 +228,7 @@ void batteryPick()
 bool batteryStraightValid(const XYMotion::Pose &start,const XYMotion::Point &target,
                           XYMotion::Pose &end)
 {
-  if(!XYMotion::straightPathValid(start,target,XY_SEGMENT_MM)) return false;
+  if(!XYMotion::straightPathValid(start,target,XY_SEGMENT_MM,false)) return false;
   const XYMotion::Point origin=XYMotion::forward(start);
   const int n=(int)ceil(hypot(target.forward-origin.forward,target.up-origin.up)/XY_SEGMENT_MM);
   XYMotion::Pose previous=start;
@@ -253,7 +255,7 @@ bool batteryStraightMove(const XYMotion::Point &target)
   if(xyStopRequested() || !zEncoderOK || !xyCalibrated) return false;
   // One continuous straight move: one acceleration ramp, one final settle/
   // correction phase. Internal 0.5mm IK samples do not stop the trajectory.
-  xyMove(dx,dy,false,true,batterySpeedScale());
+  xyMove(dx,dy,false,true,batterySpeedScale(),gripper.read()==OPEN_ANGLE);
   if(!xyLastMoveCompleted || !zEncoderOK) return false;
   if(!xyLastMoveVerified) batteryHadWarning=true;
   return true;
@@ -347,7 +349,6 @@ bool batteryVisit(const XYMotion::Point &target,float targetZ,float carryUp,bool
   if(xyEndpointError(xyMeasuredPose(),target)>XY_ENDPOINT_TOLERANCE_MM) batteryHadWarning=true;
   batteryCommandGrip(closeAfter ? CLOSE_ANGLE:OPEN_ANGLE);
   Serial.println(closeAfter ? F("STATION: CLOSE commanded") : F("STATION: OPEN commanded"));
-  xyPrintPosition();
   return true;
 }
 
@@ -374,6 +375,7 @@ void batteryRun()
   if(!zHomed || !zEncoderOK || zHomeCancelled) {
     batteryRunPause(F("RUN PAUSED at homez; no approach"));return;
   }
+  unsigned long cycleStartedUs=micros();
   bool warning=false;
   batteryAbove();
   if(!batteryStageCompleted) {batteryRunPause(F("RUN PAUSED at above"));return;}
@@ -418,11 +420,13 @@ void batteryRun()
     if(!batteryVisit(batteryRepeatOffset(BATTERY_FIRST_RETURN,repeatForwardOffset,repeatUpOffset),26.442f+repeatZOffset,-17.718f,false)) {
       batteryRunPause(F("RUN PAUSED at first return"));return;
     }
+    Serial.print(F("RUN CYCLE elapsed ms: "));Serial.println((micros()-cycleStartedUs)/1000UL);
     Serial.println(warning || batteryHadWarning ? F("RUN CYCLE FINISHED WITH WARNING; repeating; ! stops")
                                                : F("RUN CYCLE DONE; repeating; ! stops"));
     // Regrasp at the actual return target, not the old photo-pose pickup target.
     // batteryVisit lifts the empty gripper before descending to grasp again.
     if(xyStopRequested()) {batteryRunPause(F("RUN STOPPED by !"));return;}
+    cycleStartedUs=micros();
     repeatZOffset=0.4f;
     repeatForwardOffset=0.8f;
     repeatUpOffset=-1.0f;
