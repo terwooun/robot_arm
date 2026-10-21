@@ -47,7 +47,9 @@ bool batteryAwaitGrip()
 }
 
 // Closed or intermediate gripper commands retain the loaded profile.
-float batterySpeedScale() { return gripper.read()==OPEN_ANGLE ? 2.0f : 1.0f; }
+// Relative to the preceding version: loaded XY 40->80, empty XY 80->240 mm/s.
+float batterySpeedScale() { return gripper.read()==OPEN_ANGLE ? 6.0f : 2.0f; }
+float batteryZSpeedScale() { return gripper.read()==OPEN_ANGLE ? 3.0f : 2.0f; }
 XYMotion::Point batteryForwardOffset(const XYMotion::Point &p,float offset)
 {
   return XYMotion::Point{p.forward+offset,p.up};
@@ -118,8 +120,8 @@ bool batterySynchronizedMove(const XYMotion::Pose &start,
     float speed=fmin(XY_FEED_MM_S*speedScale,sqrt(2.0f*XY_ACCEL_MM_S2*speedScale*speedScale*edge));
     speed=fmax(0.25f,speed);
     unsigned long halfPeriod=(unsigned long)(stepDistance/speed*500000.0f);
-    // Z never exceeds the old 4ms HIGH + 4ms LOW pulse rate.
-    const unsigned long minimum=nz ? 4000UL : (unsigned long)(START_DELAY_US/speedScale);
+    // Z pulse limit follows load state independently of the XY multiplier.
+    const unsigned long minimum=nz ? (unsigned long)(4000UL/batteryZSpeedScale()) : (unsigned long)(START_DELAY_US/speedScale);
     if(halfPeriod<minimum) halfPeriod=minimum;
     ex+=nx; ey+=ny; ez+=nz;
     const bool px=ex>=ticks, py=ey>=ticks, pz=ez>=ticks;
@@ -169,7 +171,7 @@ void batteryAbove()
   batteryHadWarning = false;
   if (xyStopRequested()) { Serial.println(F("ABOVE: cancelled before motion")); return; }
   batteryCommandGrip(OPEN_ANGLE);
-  Serial.println(F("ABOVE: synchronized XYZ to target; XY empty 80 / loaded 40 mm/s; ! stops; no descent or close"));
+  Serial.println(F("ABOVE: synchronized XYZ to target; XY empty 240 / loaded 80 mm/s; Z empty 3x / loaded 2x; ! stops; no descent or close"));
   if (!batteryAwaitGrip() || !batterySynchronizedMove(start)) {
     digitalWrite(X_PUL,LOW); digitalWrite(Y_PUL,LOW); digitalWrite(Z_PUL,LOW);
     Serial.println(F("ABOVE PAUSED: sequence ended; inspect pos/e, no automatic retry")); return;

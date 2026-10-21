@@ -77,7 +77,7 @@ int main() {
   assert(zPulse==LOW);
   assert(!zTimes.empty() && xyAtZ.front()<10 && xyAtZ.back()>edges.size()/2);
   assert(zTimes.front()<edges.back().time && zTimes.back()>edges.front().time);
-  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=8000);
+  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=2666);
   assert(std::labs(signedPulses(X_PUL))==std::lround((BATTERY_ABOVE.b+90)*PULSE_PER_DEGREE));
   assert(std::labs(signedPulses(Y_PUL))==std::lround((BATTERY_ABOVE.a-5)*PULSE_PER_DEGREE));
   assert(zPulses==std::lround(28.056*PULSE_PER_DEGREE));
@@ -260,14 +260,24 @@ int main() {
   const XYMotion::Point speedTarget={speedOrigin.forward,speedOrigin.up+20};
   auto speedStarted=clockUs;assert(batteryStraightMove(speedTarget));
   const auto emptyTime=clockUs-speedStarted;
-  assert(batterySpeedScale()==2.0f);
+  assert(batterySpeedScale()==6.0f);
   fresh();zHomed=true;gripper.angle=CLOSE_ANGLE;
   speedStarted=clockUs;assert(batteryStraightMove(speedTarget));
   const auto loadedTime=clockUs-speedStarted;
-  assert(emptyTime<loadedTime*0.8 && batterySpeedScale()==1.0f);
-  gripper.angle=60;assert(batterySpeedScale()==1.0f);
+  assert(emptyTime<loadedTime*0.8 && batterySpeedScale()==2.0f);
+  gripper.angle=60;assert(batterySpeedScale()==2.0f);
   fresh();zHomed=true;gripper.angle=OPEN_ANGLE;stopAfterRisingEdges=1;
   assert(!batteryStraightMove(speedTarget));expectIdle();
+  // Pure Z motion: open-gripper profile is faster, closed/intermediate use 2x.
+  fresh();zHomed=true;gripper.angle=OPEN_ANGLE;
+  auto zStarted=clockUs;
+  assert(batterySynchronizedMove(xyMeasuredPose(),xyMeasuredPose(),true,5));
+  const auto emptyZTime=clockUs-zStarted;
+  assert(batteryZSpeedScale()==3.0f);
+  fresh();zHomed=true;gripper.angle=CLOSE_ANGLE;zStarted=clockUs;
+  assert(batterySynchronizedMove(xyMeasuredPose(),xyMeasuredPose(),true,5));
+  assert(emptyZTime<clockUs-zStarted && batteryZSpeedScale()==2.0f);
+  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=4000);
   // Grip wait credits elapsed time and does not restart for the same command.
   fresh();batteryCommandGrip(OPEN_ANGLE);clockUs+=500000UL;
   auto waitStart=clockUs;assert(batteryAwaitGrip());assert(clockUs-waitStart<1000UL);
