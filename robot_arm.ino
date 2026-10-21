@@ -423,7 +423,7 @@ void setup()
   // Serial
   // ----------------------
 
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.setTimeout(100);
 
   delay(1000);

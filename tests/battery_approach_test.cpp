@@ -57,6 +57,7 @@ void fresh() {
   zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();gripperEvents.clear();gripperZ.clear();gripperPositions.clear();
   stopZ=failZ=failAtSecond=failAtFirstReturn=false;homeFailure=false;homeCalls=0;zHomeCancelled=false;zEncoderOK=true;zHomed=false;
   batteryAboveZ=28.056f;
+  batteryGripAngle=-1;batteryGripChangedUs=0;
   xyOperatorStopped=false;
   batteryHandleCommand(String("s"));
 }
@@ -211,7 +212,7 @@ int main() {
   assert(homeCalls==1 && gripperEvents.size()==18 && printed("RUN STOPPED by !"));
   assert(!printed("RETURN ABOVE START") && printed("RUN: REPEAT FIRST PICK"));
   assert(fabs(gripperPositions[10].forward-BATTERY_FIRST_RETURN.forward)<0.15f);
-  assert(fabs(gripperZ[10]-26.442f)<0.25f);
+  assert(fabs(gripperZ[10]-27.042f)<0.25f);
   assert(fabs(gripperPositions[12].forward-BATTERY_SECOND_RETURN.forward)<0.15f);
   assert(fabs(gripperPositions[12].up-BATTERY_SECOND_RETURN.up)<0.15f);
   expectIdle();
@@ -239,6 +240,21 @@ int main() {
   fresh();stopAfterGripperEvents=11;Serial.clearOutput();batteryRun();
   assert(gripper.angle==20 && gripperEvents.size()==11 && !batteryStageCompleted);
   expectIdle();
+  // Third-cycle offset remains +0.6, not +1.2; home remains initial-only.
+  fresh();stopAfterGripperEvents=26;Serial.clearOutput();batteryRun();
+  assert(homeCalls==1 && gripperEvents.size()==26);
+  assert(fabs(gripperZ[18]-27.042f)<0.25f);
+  assert(fabs(gripperZ[20]-38.816f)<0.25f);
+  assert(fabs(gripperZ[25]-27.042f)<0.25f);
+  expectIdle();
+  // Grip wait credits elapsed time and does not restart for the same command.
+  fresh();batteryCommandGrip(OPEN_ANGLE);clockUs+=500000UL;
+  auto waitStart=clockUs;assert(batteryAwaitGrip());assert(clockUs-waitStart<1000UL);
+  batteryCommandGrip(OPEN_ANGLE);waitStart=clockUs;
+  assert(batteryAwaitGrip() && clockUs-waitStart<1000UL);
+  batteryCommandGrip(CLOSE_ANGLE);waitStart=clockUs;
+  assert(batteryAwaitGrip() && clockUs-waitStart>=499000UL);
+  batteryCommandGrip(OPEN_ANGLE);Serial.input="!";assert(!batteryAwaitGrip());
   // Stop at run entry is checked before homing or any servo/motor movement.
   fresh();Serial.input="!";batteryRun();
   assert(homeCalls==0 && edges.empty() && gripperEvents.empty());

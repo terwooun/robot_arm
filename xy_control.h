@@ -256,7 +256,7 @@ bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target
     const long ticks = labs(stepsX) > labs(stepsY) ? labs(stepsX) : labs(stepsY);
     if (!xyPulsePair(stepsX, stepsY, (unsigned long)ticks * 12000UL)) return false;
     totalX += labs(stepsX); totalY += labs(stepsY);
-    if (!xyWaitMicros(200000UL)
+    if (!xyWaitMicros(50000UL)
         || !xyFeedbackOK(beforeX, beforeY, stepsX, stepsY, XY_FINAL_ERROR_DEG)) return false;
     updateZEncoder();
     const float afterError = xyEndpointError(xyMeasuredPose(), target);
@@ -357,7 +357,7 @@ void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = fa
     updateZEncoder();
     previous = next;
   }
-  if (!xyWaitMicros(200000UL)) { xyAbort(); return; }
+  if (!xyWaitMicros(50000UL)) { xyAbort(); return; }
   const bool smallResidual = xyFeedbackOK(startX, startY, sentX, sentY, XY_FINAL_ERROR_DEG);
   // Never chase a large error. Complete the requested pulses, retain the
   // reference, and report measured position without claiming target reached.
