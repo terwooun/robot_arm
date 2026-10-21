@@ -13,7 +13,7 @@ const float BATTERY_CARRY_UP = -12.027f;
 // Second pickup retains +10 mm; drop/regrasp retract 9 mm from prior targets.
 // Heights and Z targets are unchanged.
 const XYMotion::Point BATTERY_SECOND_PICK = {174.613f,-72.974f};
-const XYMotion::Point BATTERY_SECOND_PLACE = {180.032f,-62.623f};
+const XYMotion::Point BATTERY_SECOND_PLACE = {181.032f,-62.623f};
 // No final pos/e at these two points: reconstructed from measured deltas.
 const XYMotion::Point BATTERY_SECOND_REPICK = {182.412f,-67.436f};
 const XYMotion::Point BATTERY_SECOND_RETURN = {174.766f,-60.441f};
@@ -46,6 +46,13 @@ bool batteryAwaitGrip()
   return elapsed>=BATTERY_GRIP_SETTLE_US || xyWaitMicros(BATTERY_GRIP_SETTLE_US-elapsed);
 }
 
+// Closed or intermediate gripper commands retain the loaded profile.
+float batterySpeedScale() { return gripper.read()==OPEN_ANGLE ? 2.0f : 1.0f; }
+XYMotion::Point batteryForwardOffset(const XYMotion::Point &p,float offset)
+{
+  return XYMotion::Point{p.forward+offset,p.up};
+}
+
 bool batteryHadWarning = false;
 bool batteryStageCompleted = false;
 
@@ -71,6 +78,7 @@ bool batterySynchronizedMove(const XYMotion::Pose &start,
                              const XYMotion::Pose &goal = BATTERY_ABOVE, bool rotateZ = true,
                              float zGoal = batteryAboveZ)
 {
+  const float speedScale=batterySpeedScale();
   long beforeX,beforeY;
   xyReadCounts(beforeX,beforeY);
   const float targetZ=rotateZ ? zGoal : batteryZAngle();
@@ -107,11 +115,11 @@ bool batterySynchronizedMove(const XYMotion::Pose &start,
     const float stepDistance=hypot(p.forward-previous.forward,p.up-previous.up);
     const float along=travelled+stepDistance*0.5f;
     const float edge=fmax(0.0f,fmin(along,length-along));
-    float speed=fmin(XY_FEED_MM_S,sqrt(2.0f*XY_ACCEL_MM_S2*edge));
+    float speed=fmin(XY_FEED_MM_S*speedScale,sqrt(2.0f*XY_ACCEL_MM_S2*speedScale*speedScale*edge));
     speed=fmax(0.25f,speed);
     unsigned long halfPeriod=(unsigned long)(stepDistance/speed*500000.0f);
     // Z never exceeds the old 4ms HIGH + 4ms LOW pulse rate.
-    const unsigned long minimum=nz ? 4000UL : START_DELAY_US;
+    const unsigned long minimum=nz ? 4000UL : (unsigned long)(START_DELAY_US/speedScale);
     if(halfPeriod<minimum) halfPeriod=minimum;
     ex+=nx; ey+=ny; ez+=nz;
     const bool px=ex>=ticks, py=ey>=ticks, pz=ez>=ticks;
@@ -161,7 +169,7 @@ void batteryAbove()
   batteryHadWarning = false;
   if (xyStopRequested()) { Serial.println(F("ABOVE: cancelled before motion")); return; }
   batteryCommandGrip(OPEN_ANGLE);
-  Serial.println(F("ABOVE: synchronized XYZ to target; XY 40 mm/s; ! stops; no descent or close"));
+  Serial.println(F("ABOVE: synchronized XYZ to target; XY empty 80 / loaded 40 mm/s; ! stops; no descent or close"));
   if (!batteryAwaitGrip() || !batterySynchronizedMove(start)) {
     digitalWrite(X_PUL,LOW); digitalWrite(Y_PUL,LOW); digitalWrite(Z_PUL,LOW);
     Serial.println(F("ABOVE PAUSED: sequence ended; inspect pos/e, no automatic retry")); return;
@@ -243,7 +251,7 @@ bool batteryStraightMove(const XYMotion::Point &target)
   if(xyStopRequested() || !zEncoderOK || !xyCalibrated) return false;
   // One continuous straight move: one acceleration ramp, one final settle/
   // correction phase. Internal 0.5mm IK samples do not stop the trajectory.
-  xyMove(dx,dy,false,true);
+  xyMove(dx,dy,false,true,batterySpeedScale());
   if(!xyLastMoveCompleted || !zEncoderOK) return false;
   if(!xyLastMoveVerified) batteryHadWarning=true;
   return true;
@@ -377,33 +385,34 @@ void batteryRun()
   if(!batteryStageCompleted) {batteryRunPause(F("RUN PAUSED at place"));return;}
   warning=warning || batteryHadWarning;
   bool repeat=false;
+  float repeatForwardOffset=0.0f; // Fixed +1.2 mm from cycle two.
   float repeatZOffset=0.0f; // Fixed +0.4 from cycle two, never accumulated.
   while(true) {
     batteryHadWarning=false;
     Serial.println(F("RUN: SECOND PICK"));
     // Empty-gripper retreat uses the established high clearance, not low tuning positions.
-    if(!batteryVisit(repeat ? BATTERY_SECOND_RETURN : BATTERY_SECOND_PICK,
+    if(!batteryVisit(batteryForwardOffset(repeat ? BATTERY_SECOND_RETURN : BATTERY_SECOND_PICK,repeatForwardOffset),
                      (repeat ? 38.216f : 38.859f)+repeatZOffset,BATTERY_CARRY_UP,true)) {
       batteryRunPause(F("RUN PAUSED at second pick"));return;
     }
     Serial.println(F("RUN: SECOND PLACE"));
-    if(!batteryVisit(BATTERY_SECOND_PLACE,61.526f+repeatZOffset,-12.704f,false)) {
+    if(!batteryVisit(batteryForwardOffset(BATTERY_SECOND_PLACE,repeatForwardOffset),61.526f+repeatZOffset,-12.704f,false)) {
       batteryRunPause(F("RUN PAUSED at second place"));return;
     }
     Serial.println(F("RUN: SECOND REPICK (reconstructed target)"));
-    if(!batteryVisit(BATTERY_SECOND_REPICK,61.526f+repeatZOffset,-12.718f,true,false)) {
+    if(!batteryVisit(batteryForwardOffset(BATTERY_SECOND_REPICK,repeatForwardOffset),61.526f+repeatZOffset,-12.718f,true,false)) {
       batteryRunPause(F("RUN PAUSED at second repick"));return;
     }
     Serial.println(F("RUN: SECOND RETURN (reconstructed target)"));
-    if(!batteryVisit(BATTERY_SECOND_RETURN,38.216f+repeatZOffset,-7.590f,false)) {
+    if(!batteryVisit(batteryForwardOffset(BATTERY_SECOND_RETURN,repeatForwardOffset),38.216f+repeatZOffset,-7.590f,false)) {
       batteryRunPause(F("RUN PAUSED at second return"));return;
     }
     Serial.println(F("RUN: FIRST REPICK (reconstructed target)"));
-    if(!batteryVisit(BATTERY_FIRST_REPICK,51.243f+repeatZOffset,-15.570f,true)) {
+    if(!batteryVisit(batteryForwardOffset(BATTERY_FIRST_REPICK,repeatForwardOffset),51.243f+repeatZOffset,-15.570f,true)) {
       batteryRunPause(F("RUN PAUSED at first repick"));return;
     }
     Serial.println(F("RUN: FIRST RETURN"));
-    if(!batteryVisit(BATTERY_FIRST_RETURN,26.442f+repeatZOffset,-17.718f,false)) {
+    if(!batteryVisit(batteryForwardOffset(BATTERY_FIRST_RETURN,repeatForwardOffset),26.442f+repeatZOffset,-17.718f,false)) {
       batteryRunPause(F("RUN PAUSED at first return"));return;
     }
     Serial.println(warning || batteryHadWarning ? F("RUN CYCLE FINISHED WITH WARNING; repeating; ! stops")
@@ -412,13 +421,15 @@ void batteryRun()
     // batteryVisit lifts the empty gripper before descending to grasp again.
     if(xyStopRequested()) {batteryRunPause(F("RUN STOPPED by !"));return;}
     repeatZOffset=0.4f;
+    repeatForwardOffset=1.2f;
+    Serial.println(F("RUN: FORWARD OFFSET +1.200 mm (fixed, not cumulative)"));
     Serial.println(F("RUN: Z OFFSET +0.400 DEG (fixed for all repeat targets)"));
     Serial.println(F("RUN: REPEAT FIRST PICK"));
-    if(!batteryVisit(BATTERY_FIRST_RETURN,26.442f+repeatZOffset,-17.718f,true)) {
+    if(!batteryVisit(batteryForwardOffset(BATTERY_FIRST_RETURN,repeatForwardOffset),26.442f+repeatZOffset,-17.718f,true)) {
       batteryRunPause(F("RUN PAUSED at repeat first pick"));return;
     }
     Serial.println(F("RUN: REPEAT FIRST PLACE"));
-    if(!batteryVisit(XYMotion::forward(BATTERY_PLACE),BATTERY_PLACE_Z+repeatZOffset,BATTERY_CARRY_UP,false)) {
+    if(!batteryVisit(batteryForwardOffset(XYMotion::forward(BATTERY_PLACE),repeatForwardOffset),BATTERY_PLACE_Z+repeatZOffset,BATTERY_CARRY_UP,false)) {
       batteryRunPause(F("RUN PAUSED at repeat first place"));return;
     }
     repeat=true;
@@ -448,7 +459,7 @@ bool batteryHandleCommand(const String &input)
     Serial.println(F("PLACE: A 21.276 B -57.929; Z 50.081 DEG; open 100 DEG"));
     Serial.println(F("CARRY: UP -12.027 mm; first lift also retracts 5 mm"));
     Serial.println(F("SECOND PICK: F 174.613 U -72.974 Z 38.859 (+10 mm forward)"));
-    Serial.println(F("SECOND PLACE: F 180.032 U -62.623 Z 61.526 (+0.6 mm forward)"));
+    Serial.println(F("SECOND PLACE: F 181.032 U -62.623 Z 61.526 (+1.0 mm from previous target)"));
     Serial.println(F("SECOND REPICK: F 182.412 U -67.436; Z held from second place (no rotation)"));
     Serial.println(F("SECOND RETURN: F 174.766 U -60.441 Z 38.216 (reconstructed)"));
     Serial.println(F("FIRST REPICK: F 170.289 U -72.596 Z 51.243 (reconstructed)"));

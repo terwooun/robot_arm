@@ -146,7 +146,7 @@ bool xyWaitMicros(unsigned long duration)
 }
 
 // DDA distributes both pulse trains over the same time interval.
-bool xyPulsePair(long stepsX, long stepsY, unsigned long durationUs)
+bool xyPulsePair(long stepsX, long stepsY, unsigned long durationUs, float speedScale = 1.0f)
 {
   const long countX = labs(stepsX), countY = labs(stepsY);
   const long ticks = countX > countY ? countX : countY;
@@ -157,7 +157,8 @@ bool xyPulsePair(long stepsX, long stepsY, unsigned long durationUs)
   // Driver direction setup; no extra pulse is emitted while switching direction.
   if (!xyWaitMicros(20UL)) return false;
   unsigned long halfPeriod = durationUs / (2UL * (unsigned long)ticks);
-  if (halfPeriod < START_DELAY_US) halfPeriod = START_DELAY_US;
+  const unsigned long minimum = (unsigned long)(START_DELAY_US / speedScale);
+  if (halfPeriod < minimum) halfPeriod = minimum;
   long errorX = ticks / 2, errorY = ticks / 2;
   for (long i = 0; i < ticks; ++i)
   {
@@ -271,7 +272,7 @@ bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target
   return false;
 }
 
-void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = false)
+void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = false, float speedScale = 1.0f)
 {
   xyLastMoveVerified = false;
   xyLastMoveCompleted = false;
@@ -347,11 +348,11 @@ void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = fa
     // Approximate a slow acceleration/deceleration profile over the path.
     const float along = (i - 0.5f) * segmentDistance;
     const float edgeDistance = along < distance - along ? along : distance - along;
-    float speed = sqrt(2.0f * XY_ACCEL_MM_S2 * edgeDistance);
-    if (speed > XY_FEED_MM_S) speed = XY_FEED_MM_S;
+    float speed = sqrt(2.0f * XY_ACCEL_MM_S2 * speedScale * speedScale * edgeDistance);
+    if (speed > XY_FEED_MM_S * speedScale) speed = XY_FEED_MM_S * speedScale;
     if (speed < 0.25f) speed = 0.25f;
     const unsigned long duration = (unsigned long)(segmentDistance / speed * 1000000.0f);
-    if (!xyPulsePair(targetX - sentX, targetY - sentY, duration)) { xyAbort(); return; }
+    if (!xyPulsePair(targetX - sentX, targetY - sentY, duration, speedScale)) { xyAbort(); return; }
     sentX = targetX; sentY = targetY;
     if (!followingWarning) followingWarning = !xyFeedbackOK(startX, startY, sentX, sentY);
     updateZEncoder();

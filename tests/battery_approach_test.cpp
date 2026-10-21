@@ -212,9 +212,9 @@ int main() {
   fresh();stopAfterGripperEvents=18;Serial.clearOutput();batteryRun();
   assert(homeCalls==1 && gripperEvents.size()==18 && printed("RUN STOPPED by !"));
   assert(!printed("RETURN ABOVE START") && printed("RUN: REPEAT FIRST PICK"));
-  assert(fabs(gripperPositions[10].forward-BATTERY_FIRST_RETURN.forward)<0.15f);
+  assert(fabs(gripperPositions[10].forward-(BATTERY_FIRST_RETURN.forward+1.2f))<0.15f);
   assert(fabs(gripperZ[10]-26.842f)<0.25f);
-  assert(fabs(gripperPositions[12].forward-BATTERY_SECOND_RETURN.forward)<0.15f);
+  assert(fabs(gripperPositions[12].forward-(BATTERY_SECOND_RETURN.forward+1.2f))<0.15f);
   assert(fabs(gripperPositions[12].up-BATTERY_SECOND_RETURN.up)<0.15f);
   expectIdle();
   fresh();homeFailure=true;Serial.clearOutput();batteryRun();
@@ -224,7 +224,7 @@ int main() {
   assert(printed("RUN CYCLE DONE") && homeCalls==1);
   assert((gripperEvents==std::vector<int>{100,100,20,100,20,100,20,100,20,100}));
   // Check actual commanded grip/release endpoints, including the shifted regrasp.
-  const XYMotion::Point expectedSecond[]={{174.613f,-72.974f},{180.032f,-62.623f},{182.412f,-67.436f},{174.766f,-60.441f}};
+  const XYMotion::Point expectedSecond[]={{174.613f,-72.974f},{181.032f,-62.623f},{182.412f,-67.436f},{174.766f,-60.441f}};
   for(int i=0;i<4;++i) {
     assert(fabs(gripperPositions[i+4].forward-expectedSecond[i].forward)<0.15f);
     assert(fabs(gripperPositions[i+4].up-expectedSecond[i].up)<0.15f);
@@ -250,7 +250,24 @@ int main() {
   assert(fabs(gripperZ[25]-26.842f)<0.25f);
   assert(gripperZPulses[13]==gripperZPulses[14]);
   assert(gripperZPulses[21]==gripperZPulses[22]);
+  assert(fabs(gripperPositions[18].forward-(BATTERY_FIRST_RETURN.forward+1.2f))<0.15f);
+  assert(fabs(gripperPositions[21].forward-182.232f)<0.15f);
+  assert(fabs(gripperPositions[25].forward-(BATTERY_FIRST_RETURN.forward+1.2f))<0.15f);
   expectIdle();
+  // Identical straight path: open gripper is faster; closed/intermediate stays loaded.
+  fresh();zHomed=true;gripper.angle=OPEN_ANGLE;
+  const XYMotion::Point speedOrigin=XYMotion::forward(xyMeasuredPose());
+  const XYMotion::Point speedTarget={speedOrigin.forward,speedOrigin.up+20};
+  auto speedStarted=clockUs;assert(batteryStraightMove(speedTarget));
+  const auto emptyTime=clockUs-speedStarted;
+  assert(batterySpeedScale()==2.0f);
+  fresh();zHomed=true;gripper.angle=CLOSE_ANGLE;
+  speedStarted=clockUs;assert(batteryStraightMove(speedTarget));
+  const auto loadedTime=clockUs-speedStarted;
+  assert(emptyTime<loadedTime*0.8 && batterySpeedScale()==1.0f);
+  gripper.angle=60;assert(batterySpeedScale()==1.0f);
+  fresh();zHomed=true;gripper.angle=OPEN_ANGLE;stopAfterRisingEdges=1;
+  assert(!batteryStraightMove(speedTarget));expectIdle();
   // Grip wait credits elapsed time and does not restart for the same command.
   fresh();batteryCommandGrip(OPEN_ANGLE);clockUs+=500000UL;
   auto waitStart=clockUs;assert(batteryAwaitGrip());assert(clockUs-waitStart<1000UL);
