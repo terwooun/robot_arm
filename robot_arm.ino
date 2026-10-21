@@ -174,8 +174,8 @@ const int8_t QUAD_TABLE[16] =
 // Speed
 // ======================================================
 
-const unsigned int START_DELAY_US = 1500;
-const unsigned int FAST_DELAY_US  = 900;
+const unsigned int START_DELAY_US = 1250;
+const unsigned int FAST_DELAY_US  = 750;
 
 const long ACCEL_PULSES = 300;
 

@@ -49,7 +49,7 @@ bool batteryAwaitGrip()
 }
 
 // Closed or intermediate gripper commands retain the loaded profile.
-// Relative to the preceding version: loaded XY 40->80, empty XY 80->240 mm/s.
+// At the current base feed: loaded XY 96, empty XY 288 mm/s.
 float batterySpeedScale() { return gripper.read()==OPEN_ANGLE ? 6.0f : 2.0f; }
 float batteryZSpeedScale() { return gripper.read()==OPEN_ANGLE ? 6.0f : 4.0f; }
 XYMotion::Point batteryRepeatOffset(const XYMotion::Point &p,float forwardOffset,float upOffset)
@@ -114,7 +114,7 @@ bool batterySynchronizedMove(const XYMotion::Pose &start,
   // Avoid trigonometry between individual pulses on the Mega.
   const float stepDistance=length/(float)ticks;
   const bool constantSpeed=gripper.read()==OPEN_ANGLE;
-  const unsigned long minimum=nz ? (unsigned long)(4000UL/batteryZSpeedScale())
+  const unsigned long minimum=nz ? (unsigned long)(3333UL/batteryZSpeedScale())
                                  : (unsigned long)(START_DELAY_US/speedScale);
   for(long i=0;i<ticks;++i) {
     if(xyStopRequested() || (sz<0 && digitalRead(Z_HOME)==HIGH)) return false;
@@ -173,7 +173,7 @@ void batteryAbove()
   batteryHadWarning = false;
   if (xyStopRequested()) { Serial.println(F("ABOVE: cancelled before motion")); return; }
   batteryCommandGrip(OPEN_ANGLE);
-  Serial.println(F("ABOVE: synchronized XYZ to target; XY empty 240 constant / loaded 80 ramp; Z empty 6x / loaded 4x; ! stops; no descent or close"));
+  Serial.println(F("ABOVE: synchronized XYZ to target; XY empty 288 constant / loaded 96 ramp; Z empty 6x / loaded 4x; ! stops; no descent or close"));
   if (!batteryAwaitGrip() || !batterySynchronizedMove(start)) {
     digitalWrite(X_PUL,LOW); digitalWrite(Y_PUL,LOW); digitalWrite(Z_PUL,LOW);
     Serial.println(F("ABOVE PAUSED: sequence ended; inspect pos/e, no automatic retry")); return;

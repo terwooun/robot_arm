@@ -77,7 +77,7 @@ int main() {
   assert(zPulse==LOW);
   assert(!zTimes.empty() && xyAtZ.front()<10 && xyAtZ.back()>edges.size()/2);
   assert(zTimes.front()<edges.back().time && zTimes.back()>edges.front().time);
-  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=1332);
+  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=1110);
   assert(std::labs(signedPulses(X_PUL))==std::lround((BATTERY_ABOVE.b+90)*PULSE_PER_DEGREE));
   assert(std::labs(signedPulses(Y_PUL))==std::lround((BATTERY_ABOVE.a-5)*PULSE_PER_DEGREE));
   assert(zPulses==std::lround(28.056*PULSE_PER_DEGREE));
@@ -286,7 +286,7 @@ int main() {
   fresh();zHomed=true;gripper.angle=CLOSE_ANGLE;zStarted=clockUs;
   assert(batterySynchronizedMove(xyMeasuredPose(),xyMeasuredPose(),true,5));
   assert(emptyZTime<clockUs-zStarted && batteryZSpeedScale()==4.0f);
-  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=2000);
+  for(std::size_t i=1;i<zTimes.size();++i) assert(zTimes[i]-zTimes[i-1]>=1666);
   // Equal-joint XY move: empty DDA ticks stay constant, loaded move retains ramp.
   unsigned long emptyFirst=0,emptyMiddle=0,loadedFirst=0,loadedMiddle=0;
   for(int loaded=0;loaded<2;++loaded) {

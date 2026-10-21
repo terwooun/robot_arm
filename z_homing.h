@@ -5,7 +5,7 @@
 const float Z_HOME_SEARCH_DEG = 30.0f;
 const float Z_HOME_BACKOFF_DEG = 5.0f;
 const unsigned long Z_HOME_TIMEOUT_MS = 20000UL;
-const unsigned int Z_HOME_SEEK_US = 1000;
+const unsigned int Z_HOME_SEEK_US = 833;
 unsigned long zHomeStarted = 0;
 bool zHomeCancelled = false;
 bool zHomed = false;
@@ -80,7 +80,7 @@ void homeZ()
   zHomeCancelled = false;
   zHomeFailure = Z_HOME_OK;
   digitalWrite(Z_PUL, LOW);
-  Serial.println(F("Z HOME: SINGLE TOUCH (4x original speed); ! stops; search max 30 DEG; timeout 20 s"));
+  Serial.println(F("Z HOME: SINGLE TOUCH (4.8x original speed); ! stops; search max 30 DEG; timeout 20 s"));
   updateZEncoder();
   if (!zEncoderOK) zHomeFailure = Z_HOME_SENSOR_ERROR;
   bool ok = zEncoderOK && zHomeCheck();

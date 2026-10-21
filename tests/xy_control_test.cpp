@@ -60,7 +60,7 @@ const bool X_DIR_INVERT = false, Y_DIR_INVERT = false;
 const int X_ENC_SIGN = -1, Y_ENC_SIGN = -1;
 const double PULSE_PER_DEGREE = 3200.0 * (32.0 / 9.0) / 360.0;
 const double ENC_COUNT_PER_DEGREE = 4000.0 * (32.0 / 9.0) / 360.0;
-const unsigned int START_DELAY_US = 1500;
+const unsigned int START_DELAY_US = 1250;
 volatile long xEncoderCount = 0, yEncoderCount = 0;
 MockSerial Serial;
 
