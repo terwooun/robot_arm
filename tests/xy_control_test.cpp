@@ -120,6 +120,7 @@ static void reset() {
   edges.clear();
   for (int &pin : pins) pin = LOW;
   clockUs = 0;
+  robotSpeedScale = 1.0f;
   simulatedXCount = simulatedYCount = 0;
   xEncoderCount = yEncoderCount = 0;
   feedbackMultiplier = 1;
@@ -343,8 +344,10 @@ static void recordedResidualAndLimits() {
   yEncoderCount = -88;
   assert(xyFeedbackOK(0, 0, 0, 76, XY_FINAL_ERROR_DEG));
   assert(!xyFeedbackOK(0, 0, 0, 76, XY_START_ERROR_DEG));
-  // Ten missed counts = 0.253125 deg must still fail at the endpoint.
+  // The teammate correction window now accepts 0.253125 degrees.
   yEncoderCount = -85;
+  assert(xyFeedbackOK(0, 0, 0, 76, XY_FINAL_ERROR_DEG));
+  yEncoderCount = -80; // 0.3797 degrees remains outside the 0.35-degree window.
   assert(!xyFeedbackOK(0, 0, 0, 76, XY_FINAL_ERROR_DEG));
   // Check negative travel as well, and retain the in-motion 1-degree guard.
   yEncoderCount = 88;
@@ -385,7 +388,7 @@ static void boundedEndpointCorrection() {
   reset();
   calibrate();
   const XYMotion::Pose start = xyMeasuredPose();
-  XYMotion::Pose goal = {start.a, start.b + 0.3f};
+  XYMotion::Pose goal = {start.a, start.b + 0.4f};
   assert(!xyCorrectEndpoint(goal, XYMotion::forward(goal), start));
   assert(edges.empty()); // Large errors never initiate correction.
   goal.b = start.b + 0.24f;
@@ -421,7 +424,7 @@ static void batteryApproachWindow() {
 static void smallResidualKeepsReference() {
   reset();
   calibrate("xycal 5 -90 -1 1");
-  feedbackScale = 0.88; // About 0.29 degree deficit for a 5mm upward move.
+  feedbackScale = 0.82; // About 0.43 degree deficit, outside the new 0.35-degree correction window.
   command("ym 5");
   assert(printed("XY FINISHED WITH WARNING"));
   assert(!printed("XY ABORTED"));
@@ -478,6 +481,10 @@ static void continuousAutomaticLift() {
 }
 
 int main() {
+  reset();calibrate("xycal 5 -90 -1 1");feedbackScale=0;
+  xyMove(0,10,false,true);
+  assert(printed("XY HARD STOP") && !xyLastMoveCompleted && !xyCalibrated);
+  expectIdle();
   continuousAutomaticLift();
   parserAndCalibration();
   previewDoesNotMutatePosition();

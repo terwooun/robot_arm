@@ -21,7 +21,7 @@ double zResponse=1;
 std::vector<unsigned long> zTimes;
 std::vector<std::size_t> xyAtZ;
 std::vector<float> heightAtZ;
-int stopAfterGripperEvents=10;
+int stopAfterGripperEvents=9;
 std::vector<int> gripperEvents;
 std::vector<float> gripperZ;
 std::vector<XYMotion::Point> gripperPositions;
@@ -38,7 +38,7 @@ void digitalWrite(int pin,int value) {
       simulatedZ+=(zDirection==HIGH ? -1 : 1)*4096.0/3200*zResponse;
       zEncoderCount=std::lround(simulatedZ);
       if(stopZ) Serial.input+='!';
-      if((failAtFirstReturn && Serial.output.str().find("RUN: FIRST RETURN")!=std::string::npos) || failZ || (failAtSecond && Serial.output.str().find("RUN: SECOND PLACE")!=std::string::npos)) zEncoderOK=false;
+      if((failAtFirstReturn && Serial.output.str().find("RUN: LAST BATTERY PLACE / FIRST RETURN")!=std::string::npos) || failZ || (failAtSecond && Serial.output.str().find("RUN: SECOND PLACE")!=std::string::npos)) zEncoderOK=false;
     }
     zPulse=value; return;
   }
@@ -52,11 +52,14 @@ void homeZ() {
 }
 #include "../battery_approach.h"
 void fresh() {
-  reset();stopAfterGripperEvents=10;
+  reset();stopAfterGripperEvents=9;
   zEncoderCount=0;simulatedZ=0;zPulses=0;zDirection=zPulse=LOW;
   zResponse=1;zTimes.clear();xyAtZ.clear();heightAtZ.clear();gripperEvents.clear();gripperZ.clear();gripperPositions.clear();
   stopZ=failZ=failAtSecond=failAtFirstReturn=false;homeFailure=false;homeCalls=0;zHomeCancelled=false;zEncoderOK=true;zHomed=false;
   batteryAboveZ=28.056f;
+  gripper.angle=20; batteryServoLastAngle=-1; batteryServoCommandUs=0;
+  batteryCycleLimit=0; batteryLoadedSpeedMax=1.5f;
+  batteryFinalLiftSpeedCap=0.75f; batteryDiagonalBoost=1.0f;
   xyOperatorStopped=false;
   batteryHandleCommand(String("s"));
 }
@@ -198,7 +201,7 @@ int main() {
   assert(!printed("PLACE: LOWER"));expectIdle();
   // One command completes a cycle; no repeat loop or stale success on failure.
   fresh();zHomed=true;Serial.clearOutput();batteryRun();
-  assert(printed("RUN CYCLE DONE") && gripper.angle==100);
+  assert(printed("completed full return cycle #1") && gripper.angle==100);
   assert(homeCalls==1);
   assert(xyEndpointError(xyMeasuredPose(),BATTERY_FIRST_RETURN)<=0.15f);
   assert(fabs(batteryZAngle()-26.442f)<0.25f);
@@ -207,37 +210,37 @@ int main() {
   assert(runText.find("RUN: SECOND PLACE")<runText.find("RUN: SECOND REPICK"));
   assert(runText.find("RUN: SECOND REPICK")<runText.find("RUN: SECOND RETURN"));
   // Two full cycles in one call, then ! at the final release.
-  fresh();stopAfterGripperEvents=18;Serial.clearOutput();batteryRun();
-  assert(homeCalls==1 && gripperEvents.size()==18 && printed("RUN STOPPED by !"));
+  fresh();stopAfterGripperEvents=17;Serial.clearOutput();batteryRun();
+  assert(homeCalls==1 && gripperEvents.size()==17 && printed("RUN STOPPED by !"));
   assert(!printed("RETURN ABOVE START") && printed("RUN: REPEAT FIRST PICK"));
-  assert(fabs(gripperPositions[10].forward-BATTERY_FIRST_RETURN.forward)<0.15f);
-  assert(fabs(gripperZ[10]-26.442f)<0.25f);
-  assert(fabs(gripperPositions[12].forward-BATTERY_SECOND_RETURN.forward)<0.15f);
-  assert(fabs(gripperPositions[12].up-BATTERY_SECOND_RETURN.up)<0.15f);
+  assert(fabs(gripperPositions[9].forward-BATTERY_FIRST_RETURN.forward)<0.15f);
+  assert(fabs(gripperZ[9]-26.442f)<0.25f);
+  assert(fabs(gripperPositions[11].forward-BATTERY_SECOND_RETURN.forward)<0.15f);
+  assert(fabs(gripperPositions[11].up-BATTERY_SECOND_RETURN.up)<0.15f);
   expectIdle();
   fresh();homeFailure=true;Serial.clearOutput();batteryRun();
   assert(printed("RUN PAUSED at homez") && edges.empty() && homeCalls==1);
   // No separate homez command is required. Fresh default starts unhomed.
   fresh();Serial.clearOutput();batteryRun();
-  assert(printed("RUN CYCLE DONE") && homeCalls==1);
-  assert((gripperEvents==std::vector<int>{100,100,20,100,20,100,20,100,20,100}));
+  assert(printed("completed full return cycle #1") && homeCalls==1);
+  assert((gripperEvents==std::vector<int>{100,20,100,20,100,20,100,20,100}));
   // Check actual commanded grip/release endpoints, including the shifted regrasp.
   const XYMotion::Point expectedSecond[]={{174.613f,-72.974f},{179.432f,-62.623f},{182.412f,-67.436f},{174.766f,-60.441f}};
   for(int i=0;i<4;++i) {
-    assert(fabs(gripperPositions[i+4].forward-expectedSecond[i].forward)<0.15f);
-    assert(fabs(gripperPositions[i+4].up-expectedSecond[i].up)<0.15f);
+    assert(fabs(gripperPositions[i+3].forward-expectedSecond[i].forward)<0.15f);
+    assert(fabs(gripperPositions[i+3].up-expectedSecond[i].up)<0.15f);
   }
   assert(xyEndpointError(xyMeasuredPose(),BATTERY_FIRST_RETURN)<=0.15f);
-  assert(fabs(gripperPositions[8].forward-170.289f)<0.15f);
-  assert(fabs(gripperPositions[8].up+72.596f)<0.15f);
-  assert(fabs(gripperPositions[9].forward-185.543f)<0.15f);
-  assert(fabs(gripperPositions[9].up+62.871f)<0.15f);
-  assert(fabs(gripperZ[6]-62.473f)<0.25f);
-  assert(fabs(gripperZ[8]-51.243f)<0.25f);
-  assert(fabs(gripperZ[9]-26.442f)<0.25f);
+  assert(fabs(gripperPositions[7].forward-170.289f)<0.15f);
+  assert(fabs(gripperPositions[7].up+72.596f)<0.15f);
+  assert(fabs(gripperPositions[8].forward-185.543f)<0.15f);
+  assert(fabs(gripperPositions[8].up+62.871f)<0.15f);
+  assert(fabs(gripperZ[5]-62.473f)<0.25f);
+  assert(fabs(gripperZ[7]-51.243f)<0.25f);
+  assert(fabs(gripperZ[8]-26.442f)<0.25f);
   // ! after repeat pickup retains the closed gripper, skips the next transfer.
-  fresh();stopAfterGripperEvents=11;Serial.clearOutput();batteryRun();
-  assert(gripper.angle==20 && gripperEvents.size()==11 && !batteryStageCompleted);
+  fresh();stopAfterGripperEvents=10;Serial.clearOutput();batteryRun();
+  assert(gripper.angle==20 && gripperEvents.size()==10 && !batteryStageCompleted);
   expectIdle();
   // Stop at run entry is checked before homing or any servo/motor movement.
   fresh();Serial.input="!";batteryRun();
@@ -247,7 +250,25 @@ int main() {
   assert(printed("RUN PAUSED at second place") && gripper.angle==20);
   assert(!printed("RUN: SECOND REPICK"));expectIdle();
   fresh();failAtFirstReturn=true;Serial.clearOutput();batteryRun();
-  assert(printed("RUN PAUSED at first return") && gripper.angle==20);
+  assert(printed("RUN PAUSED at last battery place") && gripper.angle==20);
   assert(!printed("RUN: EMPTY LIFT") && !batteryStageCompleted);expectIdle();
+  // Finite cycle mode returns the empty arm to its registered start.
+  fresh();stopAfterGripperEvents=0;
+  batteryHandleCommand(String("cycles 1"));batteryRun();
+  assert(batteryStageCompleted && homeCalls==1 && gripper.angle==100);
+  assert(printed("cycles completed; arm at registered start pose"));
+  assert(xyEndpointError(xyMeasuredPose(),XYMotion::forward(BATTERY_START))<=0.15f);
+  assert(fabs(batteryZAngle())<0.25f);
+  // Parameter validation and temporary final-lift cap restoration on cancellation.
+  fresh();batteryHandleCommand(String("lastlift 0.5"));
+  assert(batteryFinalLiftSpeedCap==0.5f);
+  batteryHandleCommand(String("lastlift 2"));assert(batteryFinalLiftSpeedCap==0.5f);
+  batteryHandleCommand(String("loadspeed 2"));assert(batteryLoadedSpeedMax==2);
+  batteryHandleCommand(String("cycles 1.5"));assert(batteryCycleLimit==0);
+  robotSpeedScale=5;gripper.angle=20;
+  const XYMotion::Point origin=XYMotion::forward(xyMeasuredPose());
+  Serial.input="!";
+  assert(!batteryFinalLiftMove(XYMotion::Point{origin.forward,origin.up+5}));
+  assert(robotSpeedScale==5);expectIdle();
   std::cout<<"Battery approach: prerequisites, path, endpoint, warning, stop, sensor tests passed\n";
 }

@@ -12,19 +12,29 @@
 const float XY_MAX_MOVE_MM = 50.0f;
 // Internal taught transport only; serial jogging remains limited to 50mm.
 const float XY_AUTO_MAX_MOVE_MM = 80.0f;
-const float XY_SEGMENT_MM = 0.5f;
+const float XY_SEGMENT_MM = 0.5f; // Dense path validity checking.
+const float XY_PULSE_SEGMENT_MM = 1.0f; // Fewer on-AVR inverse-kinematics pauses.
 const float XY_MAX_COMMAND_DEG = 45.0f;
 const float XY_CAL_WINDOW_DEG = 60.0f;
 const float XY_MAX_ERROR_DEG = 1.0f;
 const float XY_START_ERROR_DEG = 0.15f;
-// Only small residuals may enter endpoint correction; larger errors still abort.
-const float XY_FINAL_ERROR_DEG = 0.25f;
+// Allow a small observed final residual (X=0.266 DEG in the live log)
+// to enter BOUNDED LOW-SPEED endpoint correction instead of hard stopping.
+// Larger feedback errors still abort high-speed moves.
+const float XY_FINAL_ERROR_DEG = 0.35f;
+// Slightly larger window ONLY for bounded slow correction after automatic XY.
+// The 1.0 DEG in-motion hard stop and 1.0 mm station endpoint stop remain.
+const float XY_AUTO_FINAL_CORRECTION_DEG = 0.50f;
+// Stop an automatic XY trajectory early if an axis falls significantly behind.
+const float XY_AUTO_HARD_ERROR_DEG = 1.0f;
 const float XY_ENDPOINT_TOLERANCE_MM = 0.15f;
 const int XY_CORRECTION_ATTEMPTS = 3;
 const long XY_CORRECTION_STEP_PULSES = 6;
 const long XY_CORRECTION_TOTAL_PULSES = 15; // Per axis, total absolute extra travel.
-const float XY_FEED_MM_S = 40.0f;
-const float XY_ACCEL_MM_S2 = 24.0f;
+// Commanded speed multiplier (1x..10x). Actual max speed is hardware dependent.
+float robotSpeedScale = 1.0f;
+const float XY_FEED_MM_S = 20.0f;
+const float XY_ACCEL_MM_S2 = 12.0f;
 
 bool xyCalibrated = false;
 bool xyLastMoveVerified = false;
@@ -157,7 +167,8 @@ bool xyPulsePair(long stepsX, long stepsY, unsigned long durationUs)
   // Driver direction setup; no extra pulse is emitted while switching direction.
   if (!xyWaitMicros(20UL)) return false;
   unsigned long halfPeriod = durationUs / (2UL * (unsigned long)ticks);
-  if (halfPeriod < START_DELAY_US) halfPeriod = START_DELAY_US;
+  const unsigned long minHalfPeriod = (unsigned long)(START_DELAY_US / robotSpeedScale);
+  if (halfPeriod < minHalfPeriod) halfPeriod = minHalfPeriod;
   long errorX = ticks / 2, errorY = ticks / 2;
   for (long i = 0; i < ticks; ++i)
   {
@@ -206,7 +217,8 @@ float xyEndpointError(const XYMotion::Pose &pose, const XYMotion::Point &target)
 // Bounded low-speed endpoint correction, not continuous servo control.
 // Never change the target to the current position or restart the main move.
 bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target,
-                       const XYMotion::Pose &start)
+                       const XYMotion::Pose &start,
+                       float correctionWindowDeg = XY_FINAL_ERROR_DEG)
 {
   long totalX = 0, totalY = 0;
   for (int attempt = 0; attempt <= XY_CORRECTION_ATTEMPTS; ++attempt)
@@ -217,8 +229,8 @@ bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target
     const XYMotion::Pose current = xyPoseFromCounts(beforeX, beforeY);
     const float error = xyEndpointError(current, target);
     if (!isfinite(error) || !xyWithinWindow(current, start)
-        || fabs(goal.a - current.a) > XY_FINAL_ERROR_DEG
-        || fabs(goal.b - current.b) > XY_FINAL_ERROR_DEG)
+        || fabs(goal.a - current.a) > correctionWindowDeg
+        || fabs(goal.b - current.b) > correctionWindowDeg)
     {
       Serial.println(F("WARNING: XY correction outside small-error window"));
       return false;
@@ -256,7 +268,7 @@ bool xyCorrectEndpoint(const XYMotion::Pose &goal, const XYMotion::Point &target
     const long ticks = labs(stepsX) > labs(stepsY) ? labs(stepsX) : labs(stepsY);
     if (!xyPulsePair(stepsX, stepsY, (unsigned long)ticks * 12000UL)) return false;
     totalX += labs(stepsX); totalY += labs(stepsY);
-    if (!xyWaitMicros(200000UL)
+    if (!xyWaitMicros(8000UL)
         || !xyFeedbackOK(beforeX, beforeY, stepsX, stepsY, XY_FINAL_ERROR_DEG)) return false;
     updateZEncoder();
     const float afterError = xyEndpointError(xyMeasuredPose(), target);
@@ -298,7 +310,7 @@ void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = fa
     Serial.println(F("ERROR: XY path unreachable, near singularity or outside calibration window"));
     return;
   }
-  const int segments = (int)ceil(distance / XY_SEGMENT_MM);
+  const int segments = (int)ceil(distance / XY_PULSE_SEGMENT_MM);
   XYMotion::Pose previous = start;
   long finalX = 0, finalY = 0;
   // Check the entire path before emitting any pulses; use cumulative rounding.
@@ -347,22 +359,47 @@ void xyMove(float deltaForward, float deltaUp, bool preview, bool automatic = fa
     // Approximate a slow acceleration/deceleration profile over the path.
     const float along = (i - 0.5f) * segmentDistance;
     const float edgeDistance = along < distance - along ? along : distance - along;
-    float speed = sqrt(2.0f * XY_ACCEL_MM_S2 * edgeDistance);
-    if (speed > XY_FEED_MM_S) speed = XY_FEED_MM_S;
+    float speed = sqrt(2.0f * XY_ACCEL_MM_S2 * robotSpeedScale * robotSpeedScale * edgeDistance);
+    if (speed > XY_FEED_MM_S * robotSpeedScale) speed = XY_FEED_MM_S * robotSpeedScale;
     if (speed < 0.25f) speed = 0.25f;
     const unsigned long duration = (unsigned long)(segmentDistance / speed * 1000000.0f);
     if (!xyPulsePair(targetX - sentX, targetY - sentY, duration)) { xyAbort(); return; }
     sentX = targetX; sentY = targetY;
+    // Unlike a final-only check, this catches load-induced loss of tracking
+    // while the arm is still rising, before a later Z rotation can start.
+    if (automatic) {
+      long measuredX, measuredY;
+      xyReadCounts(measuredX, measuredY);
+      const float lagX = ((float)measuredX - startX) * X_ENC_SIGN / ENC_COUNT_PER_DEGREE
+                       - sentX / PULSE_PER_DEGREE;
+      const float lagY = ((float)measuredY - startY) * Y_ENC_SIGN / ENC_COUNT_PER_DEGREE
+                       - sentY / PULSE_PER_DEGREE;
+      if (!isfinite(lagX) || !isfinite(lagY)
+          || fabs(lagX) > XY_AUTO_HARD_ERROR_DEG
+          || fabs(lagY) > XY_AUTO_HARD_ERROR_DEG) {
+        Serial.print(F("XY HARD STOP: tracking error X ")); Serial.print(lagX, 3);
+        Serial.print(F(" DEG, Y ")); Serial.print(lagY, 3);
+        Serial.println(F(" DEG; motion stopped before the next station"));
+        xyAbort();
+        return;
+      }
+    }
     if (!followingWarning) followingWarning = !xyFeedbackOK(startX, startY, sentX, sentY);
     updateZEncoder();
     previous = next;
   }
-  if (!xyWaitMicros(200000UL)) { xyAbort(); return; }
-  const bool smallResidual = xyFeedbackOK(startX, startY, sentX, sentY, XY_FINAL_ERROR_DEG);
-  // Never chase a large error. Complete the requested pulses, retain the
-  // reference, and report measured position without claiming target reached.
+  if (!xyWaitMicros(automatic ? 4000UL : 200000UL)) { xyAbort(); return; }
+  // A completed move can have a small load-induced encoder lag: for example
+  // Y=-0.399 DEG at the first lift. Attempt BOUNDED, LOW-SPEED correction
+  // instead of treating it like a large following error. No hard stops change.
+  const float correctionWindow = automatic
+      ? XY_AUTO_FINAL_CORRECTION_DEG : XY_FINAL_ERROR_DEG;
+  const bool smallResidual = xyFeedbackOK(startX, startY, sentX, sentY, correctionWindow);
+  // Never chase a large error. If ANY in-motion following warning was seen,
+  // do not issue more pulses after the trajectory; preserve the stop path.
   bool corrected = false;
-  if (smallResidual && !followingWarning) corrected = xyCorrectEndpoint(previous, target, start);
+  if (smallResidual && !followingWarning)
+    corrected = xyCorrectEndpoint(previous, target, start, correctionWindow);
   if (xyOperatorStopped) { xyAbort(); return; }
   if (!corrected)
     Serial.println(F("WARNING: XY target not verified; correction skipped/limited; reference retained"));
