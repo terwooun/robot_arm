@@ -212,10 +212,10 @@ int main() {
   fresh();stopAfterGripperEvents=18;Serial.clearOutput();batteryRun();
   assert(homeCalls==1 && gripperEvents.size()==18 && printed("RUN STOPPED by !"));
   assert(!printed("RETURN ABOVE START") && printed("RUN: REPEAT FIRST PICK"));
-  assert(fabs(gripperPositions[10].forward-(BATTERY_FIRST_RETURN.forward+1.2f))<0.15f);
+  assert(fabs(gripperPositions[10].forward-(BATTERY_FIRST_RETURN.forward+0.8f))<0.15f);
   assert(fabs(gripperZ[10]-26.842f)<0.25f);
-  assert(fabs(gripperPositions[12].forward-(BATTERY_SECOND_RETURN.forward+1.2f))<0.15f);
-  assert(fabs(gripperPositions[12].up-BATTERY_SECOND_RETURN.up)<0.15f);
+  assert(fabs(gripperPositions[12].forward-(BATTERY_SECOND_RETURN.forward+0.8f))<0.15f);
+  assert(fabs(gripperPositions[12].up-(BATTERY_SECOND_RETURN.up-1.0f))<0.15f);
   expectIdle();
   fresh();homeFailure=true;Serial.clearOutput();batteryRun();
   assert(printed("RUN PAUSED at homez") && edges.empty() && homeCalls==1);
@@ -250,9 +250,18 @@ int main() {
   assert(fabs(gripperZ[25]-26.842f)<0.25f);
   assert(gripperZPulses[13]==gripperZPulses[14]);
   assert(gripperZPulses[21]==gripperZPulses[22]);
-  assert(fabs(gripperPositions[18].forward-(BATTERY_FIRST_RETURN.forward+1.2f))<0.15f);
-  assert(fabs(gripperPositions[21].forward-182.232f)<0.15f);
-  assert(fabs(gripperPositions[25].forward-(BATTERY_FIRST_RETURN.forward+1.2f))<0.15f);
+  assert(fabs(gripperPositions[18].forward-(BATTERY_FIRST_RETURN.forward+0.8f))<0.15f);
+  assert(fabs(gripperPositions[21].forward-181.832f)<0.15f);
+  assert(fabs(gripperPositions[25].forward-(BATTERY_FIRST_RETURN.forward+0.8f))<0.15f);
+  // Every grip/release target in cycles two and three has the same fixed XY shift.
+  const XYMotion::Point repeatBase[]={BATTERY_FIRST_RETURN,XYMotion::forward(BATTERY_PLACE),
+    BATTERY_SECOND_RETURN,BATTERY_SECOND_PLACE,BATTERY_SECOND_REPICK,BATTERY_SECOND_RETURN,
+    BATTERY_FIRST_REPICK,BATTERY_FIRST_RETURN};
+  for(int cycle=0;cycle<2;++cycle) for(int station=0;station<8;++station) {
+    const XYMotion::Point &actual=gripperPositions[10+cycle*8+station];
+    assert(fabs(actual.forward-(repeatBase[station].forward+0.8f))<0.15f);
+    assert(fabs(actual.up-(repeatBase[station].up-1.0f))<0.15f);
+  }
   expectIdle();
   // Identical straight path: open gripper is faster; closed/intermediate stays loaded.
   fresh();zHomed=true;gripper.angle=OPEN_ANGLE;
