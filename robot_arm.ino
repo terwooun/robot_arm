@@ -7,21 +7,21 @@ const int OPEN_ANGLE = 100;
 const int CLOSE_ANGLE = 20;
 
 // ======================================================
-// 3-axis robotic arm with X/Y encoders and Z AS5600
+// 3축 로봇팔 + X/Y Encoder + Z AS5600
 //
-// Y axis (first joint)
+// Y축(1축)
 // D4  -> PUL+
 // D5  -> DIR+
 // D18 -> Encoder A
 // D19 -> Encoder B
 //
-// X axis (second joint)
+// X축(2축)
 // D6 -> PUL+
 // D7 -> DIR+
 // D2 -> Encoder A
 // D3 -> Encoder B
 //
-// Z axis (third joint)
+// Z축(3축)
 // D8 -> PUL+
 // D9 -> DIR+
 //
@@ -32,22 +32,22 @@ const int CLOSE_ANGLE = 20;
 // SCL -> D21
 // DIR -> GND
 //
-// Serial commands:
+// 입력:
 // x 30
 // y -10
 // z 20
 //
-// e: show X/Y/Z encoder positions
-// zero: reset the current encoder references
-// h: show X/Y/Z home switch inputs without motion
-// homez: seek Z switch, back off by 5 degrees; ! to interrupt
-// o / open: open gripper (D10, 100 degrees)
-// c / close: close gripper (20 degrees)
-// angle 60: set gripper angle (0 to 180 degrees)
-// xyhelp: help for XY motion and pose calibration
-// xm 1 / ym 1: move forward / upward by 1 mm after XY calibration
-// xy 1 1: simultaneous 1-mm forward and upward move
-// Z axis uses the existing z angle command
+// e    : X/Y/Z 현재 엔코더 위치
+// zero : 현재 위치를 0점으로 설정
+// h    : X/Y/Z 홈 스위치 입력 확인 (모터 이동 없음)
+// homez : Z축 단일 감지 후 +5도 후퇴 호밍 (! 입력으로 중단)
+// o / open : 그리퍼 열기 (D10, 100도)
+// c / close : 그리퍼 닫기 (20도)
+// angle 60 : 그리퍼 각도 지정 (0~180도)
+// xyhelp : X/Y mm 이동 및 기준 자세 등록 안내
+// xm 1 / ym 1 : 앞으로 / 위로 1mm (xycal 등록 후)
+// xy 1 1 : 앞으로 1mm, 위로 1mm 동시 이동
+// Z축은 기존 z 각도 명령 사용
 // ======================================================
 
 
@@ -64,8 +64,8 @@ const int X_DIR = 7;
 const int Z_PUL = 8;
 const int Z_DIR = 9;
 
-// NC wiring: COM to GND, NC to input
-// LOW = released, HIGH = pressed or disconnected
+// NC 배선: COM -> GND, NC -> 입력핀
+// LOW = 눌리지 않음, HIGH = 눌림 또는 배선 단선
 const int X_HOME = 22;
 const int Y_HOME = 23;
 const int Z_HOME = 24;
@@ -78,8 +78,8 @@ const int Z_HOME = 24;
 const int Y_ENC_A = 18;
 const int Y_ENC_B = 19;
 
-// AS5600 uses pins D20/D21
-// X encoder uses pins D2/D3
+// AS5600이 D20/D21을 사용하므로
+// X Encoder는 D2/D3 사용
 const int X_ENC_A = 2;
 const int X_ENC_B = 3;
 
@@ -92,7 +92,7 @@ const byte AS5600_ADDR = 0x36;
 
 const long AS5600_CPR = 4096;
 
-// Accumulated Z encoder counts
+// Z축 누적 엔코더 카운트
 long zEncoderCount = 0;
 
 uint16_t zLastRaw = 0;
@@ -107,22 +107,22 @@ bool zEncoderOK = false;
 const long PULSES_PER_REV = 3200;
 
 // X/Y Encoder
-// 1000 PPR x 4 = 4000 CPR
+// 1000 PPR × 4 = 4000 CPR
 const long ENCODER_CPR = 4000;
 
-// Confirmed X/Y/Z gear ratio from physical teeth count
+// X/Y/Z 공통 확정 기어비 (실물 확인)
 // Motor 9T -> Robot 32T
 const double GEAR_RATIO = 32.0 / 9.0;
 
 
-// Command pulses per degree at joint output
+// 관절 출력축 1도당 명령 Pulse
 const double PULSE_PER_DEGREE =
   PULSES_PER_REV *
   GEAR_RATIO /
   360.0;
 
 
-// X/Y encoder counts per output degree
+// X/Y 관절 1도당 Encoder Count
 const double ENC_COUNT_PER_DEGREE =
   ENCODER_CPR *
   GEAR_RATIO /
@@ -138,14 +138,14 @@ const bool X_DIR_INVERT = false;
 const bool Z_DIR_INVERT = false;
 
 
-// X/Y encoder direction signs
+// X/Y Encoder 방향
 const int Y_ENC_SIGN = -1;
 const int X_ENC_SIGN = -1;
 
 
-// Z AS5600 encoder sign
-// Measured z +5 produces raw change of -202 counts; align the signs.
-// Do not modify motor direction or homing direction.
+// Z AS5600 방향
+// 실측: z +5에서 RAW 변화 -202 counts. 명령 방향과 표시 부호를 일치시킴.
+// 모터 DIR 및 호밍 방향은 변경하지 않음.
 const int Z_ENC_SIGN = -1;
 
 
@@ -160,7 +160,7 @@ volatile uint8_t yPrevState = 0;
 volatile uint8_t xPrevState = 0;
 
 
-// Quadrature encoder state transition table
+// Quadrature Encoder 상태표
 const int8_t QUAD_TABLE[16] =
 {
    0, -1,  1,  0,
@@ -227,7 +227,7 @@ void updateXEncoder()
 
 
 // ======================================================
-// Read AS5600 raw angle
+// AS5600 RAW 값 읽기
 // ======================================================
 
 bool readAS5600Raw(uint16_t &raw)
@@ -265,10 +265,10 @@ bool readAS5600Raw(uint16_t &raw)
 
 
 // ======================================================
-// Update accumulated Z encoder count
+// Z Encoder 누적값 갱신
 //
-// AS5600 wraps from 4095 to 0.
-// Convert the raw reading into a signed accumulated count.
+// AS5600은 0~4095 후 다시 0으로 돌아가므로
+// 회전 방향을 판단하여 누적값으로 변환
 // ======================================================
 
 void updateZEncoder()
@@ -282,7 +282,7 @@ void updateZEncoder()
   }
 
 
-  // First valid reading
+  // 처음 읽었을 때
   if (!zEncoderOK)
   {
     zLastRaw = raw;
@@ -296,13 +296,13 @@ void updateZEncoder()
     (int)zLastRaw;
 
 
-  // Handle 4095 to 0 wraparound
+  // 4095 -> 0 넘어갈 때
   if (difference > 2048)
   {
     difference -= 4096;
   }
 
-  // Handle 0 to 4095 wraparound
+  // 0 -> 4095 넘어갈 때
   else if (difference < -2048)
   {
     difference += 4096;
@@ -423,10 +423,7 @@ void setup()
   // Serial
   // ----------------------
 
-  // Faster 4x command scale (previous default v4 was 3x).
-  // Return to 'speed 1' if there is vibration, missed steps or grip slip.
-  robotSpeedScale = 5.0f;
-  Serial.begin(115200);
+  Serial.begin(9600);
   Serial.setTimeout(100);
 
   delay(1000);
@@ -467,11 +464,6 @@ void setup()
 
 
   Serial.println();
-  Serial.println(F("speed / speed 1 / speed 2 / speed 3 / speed 4 / speed 5 / speed 10"));
-  Serial.println(F("diagboost / diagboost 1 / diagboost 2 / diagboost 3 / diagboost 5 (OPT-IN)"));
-  Serial.println(F("loadspeed / loadspeed 1 / loadspeed 1.5 / loadspeed 2 (loaded motion only)"));
-  Serial.println(F("cycles 0=repeat forever, cycles 1=single test, cycles 2=two tests"));
-  Serial.println(F("s then run; ! stops motion (reset pose after stop)"));
   Serial.println("Enter command:");
 }
 
@@ -482,7 +474,7 @@ void setup()
 
 void loop()
 {
-  // Keep checking Z encoder when idle
+  // 정지 상태에서도 Z Encoder 계속 확인
   updateZEncoder();
 
 
@@ -493,47 +485,6 @@ void loop()
 
     input.trim();
     input.toLowerCase();
-
-    // Speed only: no changes to the taught battery positions or path order.
-    if (input == "speed") {
-      Serial.print(F("SPEED MULTIPLIER: "));
-      Serial.print(robotSpeedScale, 1);
-      Serial.println(F("x (commanded, not measured)"));
-      return;
-    }
-    if (input.startsWith("speed ")) {
-      String factor = input.substring(6);
-      factor.trim();
-      if (factor == "1" || factor == "2" || factor == "3" || factor == "4" ||
-          factor == "5" || factor == "10") {
-        robotSpeedScale = factor.toFloat();
-        Serial.print(F("SPEED SET TO "));
-        Serial.print(robotSpeedScale, 0);
-        Serial.println(F("x; test with NO batteries first"));
-      } else {
-        Serial.println(F("ERROR: speed 1 / 2 / 3 / 4 / 5 / 10"));
-      }
-      return;
-    }
-
-    // Extra boost only for the first XYZ diagonal after homing, not the homing switch.
-    if (input == "diagboost") {
-      Serial.print(F("DIAGONAL BOOST: "));
-      Serial.print(batteryDiagonalBoost, 0);
-      Serial.println(F("x (diagonal only, effective capped at 15x)"));
-      return;
-    }
-    if (input.startsWith("diagboost ")) {
-      String factor=input.substring(10);
-      factor.trim();
-      if (factor == "1" || factor == "2" || factor == "3" || factor == "5") {
-        batteryDiagonalBoost=factor.toFloat();
-        Serial.print(F("DIAGONAL BOOST SET: "));
-        Serial.print(batteryDiagonalBoost, 0);
-        Serial.println(F("x; TEST EMPTY AT 1x FIRST"));
-      } else Serial.println(F("ERROR: diagboost 1 / 2 / 3 / 5"));
-      return;
-    }
 
     if (batteryHandleCommand(input))
     {
@@ -579,7 +530,7 @@ void loop()
       String angleText = input.substring(6);
       angleText.trim();
       bool valid = angleText.length() > 0;
-      // Reject nonnumeric input instead of interpreting it as zero degrees
+      // 숫자가 아닌 입력을 0도로 해석하여 움직이지 않도록 검사
       for (unsigned int i = 0; i < angleText.length(); i++)
       {
         if (angleText.charAt(i) < '0' || angleText.charAt(i) > '9')
@@ -691,7 +642,7 @@ void loop()
       ).toFloat();
 
 
-    // Initial manual-test safety range
+    // 초기 테스트 안전범위
     if (angle < -90 || angle > 90)
     {
       Serial.println("ERROR");
@@ -926,7 +877,7 @@ void moveAxis(
     }
 
 
-    // Accelerate
+    // 가속
     if (
       accelPulses > 0
       &&
@@ -950,7 +901,7 @@ void moveAxis(
     }
 
 
-    // Decelerate
+    // 감속
     else if (
       accelPulses > 0
       &&
@@ -984,16 +935,13 @@ void moveAxis(
     }
 
 
-    // Cruise at constant pulse period
+    // 일정속도
     else
     {
       pulseDelay =
         FAST_DELAY_US;
     }
 
-
-    // Speed multiplier applies to manual X/Y/Z pulse profiles as well.
-    pulseDelay = (unsigned int)(pulseDelay / robotSpeedScale);
 
     digitalWrite(
       pulPin,
@@ -1015,7 +963,7 @@ void moveAxis(
     );
 
 
-    // Continue reading AS5600 during Z motion
+    // Z축 이동 중 AS5600 값 지속 확인
     if (
       trackZ
       &&
@@ -1165,7 +1113,7 @@ void printZEncoderResult(
     Z_ENC_SIGN;
 
 
-  // Original documentation comment (English-only source)
+  // AS5600은 모터축에 설치
   // Motor Angle / Gear Ratio = Z Output Angle
   double motorAngle =
     encoderDelta
